@@ -542,17 +542,10 @@
         <div class="relative">
           <select id="modelSelect" aria-label="Model"
             class="appearance-none cursor-pointer pl-3 pr-8 py-2 rounded-xl bg-white/[0.05] border border-white/10 text-[12px] font-medium text-slate-200 outline-none transition hover:bg-white/[0.09] focus:border-indigo-400/50">
-            <option value="gpt-4o-mini">GPT-4o mini</option>
-            <option value="gpt-4o">GPT-4o</option>
-            <option value="gpt-4.1">GPT-4.1</option>
-            <option value="gpt-4.1-mini">GPT-4.1 mini</option>
-            <option value="o4-mini">o4-mini</option>
-            <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
-            <option value="claude-3-5-haiku">Claude 3.5 Haiku</option>
-            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-            <option value="llama-3.3-70b">Llama 3.3 70B</option>
-            <option value="mistral-large">Mistral Large</option>
+            <option value="llama-3.3-70b-versatile">Anu Deep Reasoning v3.6</option>
+            <option value="llama-3.1-8b-instant">Anu Fast Core v3.6</option>
+            <option value="qwen-2.5-32b">Anu Logic Pro v3.6</option>
+            <option value="mixtral-8x7b-32768">Anu Scout Engine v3.6</option>
           </select>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
             <path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
@@ -642,17 +635,10 @@
       <div>
         <label for="setModel" class="block text-xs font-semibold text-slate-300 mb-1.5">Default model</label>
         <select id="setModel" class="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.05] border border-white/10 text-sm text-slate-100 outline-none focus:border-indigo-400/60 transition">
-          <option value="gpt-4o-mini">GPT-4o mini</option>
-          <option value="gpt-4o">GPT-4o</option>
-          <option value="gpt-4.1">GPT-4.1</option>
-          <option value="gpt-4.1-mini">GPT-4.1 mini</option>
-          <option value="o4-mini">o4-mini</option>
-          <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
-          <option value="claude-3-5-haiku">Claude 3.5 Haiku</option>
-          <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-          <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-          <option value="llama-3.3-70b">Llama 3.3 70B</option>
-          <option value="mistral-large">Mistral Large</option>
+          <option value="llama-3.3-70b-versatile">Anu Deep Reasoning v3.6</option>
+          <option value="llama-3.1-8b-instant">Anu Fast Core v3.6</option>
+          <option value="qwen-2.5-32b">Anu Logic Pro v3.6</option>
+          <option value="mixtral-8x7b-32768">Anu Scout Engine v3.6</option>
         </select>
       </div>
 
@@ -726,6 +712,9 @@
   /* ==========================================================
      1. CONFIGURATION
      ========================================================== */
+
+  /* ⚠️ FIX #1 — FULLY QUALIFIED ABSOLUTE ENDPOINT.
+     Never use a relative path like '/api/chat' here. */
   const API_ENDPOINT = 'https://anu-ai.vercel.app/api/chat';
 
   const firebaseConfig = {
@@ -737,11 +726,23 @@
     appId: "1:604169434635:web:ee0842670514647051790e"
   };
 
+  /* ⚠️ FIX #2 — VALID GROQ MODELS ONLY.
+     Key = Groq model id sent to the backend.
+     Label = friendly Anu-branded name shown in the UI. */
+  const MODEL_CATALOG = [
+    { id: 'llama-3.3-70b-versatile', label: 'Anu Deep Reasoning v3.6' },
+    { id: 'llama-3.1-8b-instant',    label: 'Anu Fast Core v3.6' },
+    { id: 'qwen-2.5-32b',            label: 'Anu Logic Pro v3.6' },
+    { id: 'mixtral-8x7b-32768',      label: 'Anu Scout Engine v3.6' }
+  ];
+
+  const DEFAULT_MODEL_ID = 'llama-3.3-70b-versatile';
+
   const LS_SETTINGS = 'anu.settings.v1';
   const LS_CHATS_PREFIX = 'anu.chats.v1.';
 
   const DEFAULT_SETTINGS = {
-    model: 'gpt-4o-mini',
+    model: DEFAULT_MODEL_ID,
     temperature: 0.7,
     systemPrompt: 'You are Anu AI, a brilliant, warm and highly capable assistant. You give accurate, well-structured and genuinely useful answers. Use Markdown formatting (headings, bullet lists, tables and fenced code blocks with language tags) whenever it improves clarity. Be concise by default but thorough when the topic demands it. If you are unsure about something, say so honestly.',
     streaming: true
@@ -1010,10 +1011,21 @@
   /* ==========================================================
      5. SETTINGS PERSISTENCE
      ========================================================== */
+
+  function isKnownModel(id) {
+    return MODEL_CATALOG.some(function (m) { return m.id === id; });
+  }
+
+  function normalizeModel(id) {
+    return isKnownModel(id) ? id : DEFAULT_MODEL_ID;
+  }
+
   function loadSettings() {
     const raw = localStorage.getItem(LS_SETTINGS);
     const parsed = safeParse(raw, null);
     state.settings = Object.assign({}, DEFAULT_SETTINGS, parsed && typeof parsed === 'object' ? parsed : {});
+    // Migrate any stale / invalid model ids to a valid Groq model
+    state.settings.model = normalizeModel(state.settings.model);
   }
 
   function saveSettings() {
@@ -1024,9 +1036,12 @@
 
   function syncSettingsUI() {
     const s = state.settings;
-    if (modelSelect) modelSelect.value = s.model;
+    const safeModel = normalizeModel(s.model);
+    state.settings.model = safeModel;
+
+    if (modelSelect) modelSelect.value = safeModel;
     const sm = $('#setModel');
-    if (sm) sm.value = s.model;
+    if (sm) sm.value = safeModel;
     const st = $('#setTemp');
     if (st) st.value = String(s.temperature);
     const tv = $('#tempValue');
@@ -1546,21 +1561,12 @@
     scrollToBottom(false);
   }
 
+  /* Model id -> friendly Anu label */
   function modelLabel(value) {
-    const map = {
-      'gpt-4o-mini': 'GPT-4o mini',
-      'gpt-4o': 'GPT-4o',
-      'gpt-4.1': 'GPT-4.1',
-      'gpt-4.1-mini': 'GPT-4.1 mini',
-      'o4-mini': 'o4-mini',
-      'claude-3-5-sonnet': 'Claude 3.5 Sonnet',
-      'claude-3-5-haiku': 'Claude 3.5 Haiku',
-      'gemini-1.5-flash': 'Gemini 1.5 Flash',
-      'gemini-1.5-pro': 'Gemini 1.5 Pro',
-      'llama-3.3-70b': 'Llama 3.3 70B',
-      'mistral-large': 'Mistral Large'
-    };
-    return map[value] || value;
+    const found = MODEL_CATALOG.find(function (m) { return m.id === value; });
+    if (found) return found.label;
+    const fallback = MODEL_CATALOG.find(function (m) { return m.id === DEFAULT_MODEL_ID; });
+    return fallback ? fallback.label : 'Anu AI';
   }
 
   function renderSidebar() {
@@ -1779,16 +1785,53 @@
     return full;
   }
 
+  /* ------------------------------------------------------------------
+     The actual network call.
+     Uses the FULL, ABSOLUTE Vercel endpoint declared in API_ENDPOINT.
+     ------------------------------------------------------------------ */
   async function callAnuAI(payload, onDelta, signal) {
-    const response = await fetch(API_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': payload.stream ? 'text/event-stream, application/json, text/plain' : 'application/json'
-      },
-      body: JSON.stringify(payload),
-      signal: signal
-    });
+    // Defensive guard: guarantee we always hit the absolute URL.
+    const url = String(API_ENDPOINT);
+    if (!/^https?:\/\//i.test(url)) {
+      throw new Error('Invalid API endpoint configured: "' + url + '" (must be an absolute http(s) URL).');
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw new Error('You appear to be offline. Reconnect and try again.');
+    }
+
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        mode: 'cors',
+        cache: 'no-store',
+        redirect: 'follow',
+        credentials: 'omit',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': payload.stream
+            ? 'text/event-stream, application/json, text/plain'
+            : 'application/json, text/plain'
+        },
+        body: JSON.stringify(payload),
+        signal: signal
+      });
+    } catch (networkErr) {
+      // Abort is a legitimate control-flow signal — re-throw untouched.
+      if (networkErr && networkErr.name === 'AbortError') throw networkErr;
+
+      console.error('Network error calling', url, networkErr);
+      const isFetchFail = networkErr instanceof TypeError ||
+        /failed to fetch|networkerror|load failed/i.test(String(networkErr && networkErr.message));
+      if (isFetchFail) {
+        throw new Error(
+          'Failed to fetch — could not reach ' + url + '. ' +
+          'This usually means the backend is down, CORS is not allowing this origin, ' +
+          'or your network is blocking the request.'
+        );
+      }
+      throw networkErr;
+    }
 
     if (!response.ok) {
       let detail = '';
@@ -1890,7 +1933,7 @@
 
     const payload = {
       messages: apiMessages,
-      model: state.settings.model,
+      model: normalizeModel(state.settings.model),
       temperature: Number(state.settings.temperature),
       stream: !!state.settings.streaming
     };
@@ -2169,9 +2212,10 @@
     });
 
     $('#setModel').addEventListener('change', function () {
-      state.settings.model = this.value;
-      modelSelect.value = this.value;
+      state.settings.model = normalizeModel(this.value);
+      modelSelect.value = state.settings.model;
       saveSettings();
+      renderConversation();
     });
 
     $('#setTemp').addEventListener('input', function () {
@@ -2195,16 +2239,17 @@
       state.settings = Object.assign({}, DEFAULT_SETTINGS);
       saveSettings();
       syncSettingsUI();
-      modelSelect.value = state.settings.model;
       renderConversation();
       toast('Settings reset to defaults.', 'success');
     });
 
     /* ---- Model select in header ---- */
     modelSelect.addEventListener('change', function () {
-      state.settings.model = this.value;
+      state.settings.model = normalizeModel(this.value);
+      this.value = state.settings.model;
       saveSettings();
-      $('#setModel').value = this.value;
+      const sm = $('#setModel');
+      if (sm) sm.value = state.settings.model;
       renderConversation();
     });
 
@@ -2328,6 +2373,10 @@
     wireEvents();
     initSpeech();
     setAuthMode('signin');
+
+    // Surface the configured endpoint for quick debugging.
+    console.info('[Anu AI] Chat API endpoint:', API_ENDPOINT);
+    console.info('[Anu AI] Available models:', MODEL_CATALOG.map(function (m) { return m.id; }).join(', '));
 
     state.auth = initFirebase();
 
