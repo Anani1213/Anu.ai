@@ -1,6 +1,6 @@
-// api/chat.js - Smart Model Mapping & Robust Error Handler
+// api/chat.js - Smart Auto-Retry Multi-Model Handler
 export default async function handler(req, res) {
-  // 1. CORS Headers Setup
+  // 1. CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -9,65 +9,64 @@ export default async function handler(req, res) {
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
   );
 
-  // Handle preflight OPTIONS request
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: { message: 'Method not allowed' } });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const { messages, model } = req.body || {};
+    const { messages } = req.body || {};
+    const apiKey = process.env.GROQ_API_KEY;
 
-    // Check if API key exists
-    if (!process.env.GROQ_API_KEY) {
-      return res.status(500).json({ error: { message: 'GROQ_API_KEY is missing in Vercel Environment Variables.' } });
+    if (!apiKey) {
+      return res.status(500).json({ error: 'GROQ_API_KEY is missing in Vercel Environment Variables.' });
     }
 
-    // 2. MODEL MAPPER: Convert any custom model string to official active Groq models
-    const MODEL_MAPPING = {
-      'openai/gpt-oss-120b': 'llama-3.3-70b-versatile',
-      'openai/gpt-oss-20b': 'llama-3.1-8b-instant',
-      'qwen/qwen3-32b': 'qwen-2.5-coder-32b',
-      'meta-llama/llama-4-scout-17b-16e-instruct': 'llama-3.1-8b-instant',
-      'Anu Deep Reasoning v3.6': 'llama-3.3-70b-versatile',
-      'Anu Fast Core v3.6': 'llama-3.1-8b-instant',
-      'Anu Logic Pro v3.6': 'qwen-2.5-coder-32b',
-      'Anu Scout Engine v3.6': 'llama-3.1-8b-instant'
-    };
+    // 2. የሚሰሩ የ Groq ሞዴሎች ዝርዝር (አንዱ 404 ካለ በራሱ ወደሚቀጥለው ይሸጋገራል)
+    const CANDIDATE_MODELS = [
+      'llama-3.1-8b-instant',
+      'llama-3.3-70b-versatile',
+      'mixtral-8x7b-32768',
+      'gemma2-9b-it'
+    ];
 
-    // Pick valid Groq model or default to llama-3.3-70b-versatile
-    const selectedGroqModel = MODEL_MAPPING[model] || 'llama-3.3-70b-versatile';
+    let lastErrorMessage = '';
 
-    // Filter system directives or clean payload if needed
-    const cleanedMessages = Array.isArray(messages) ? messages : [];
+    // 3. ሞዴሎቹን በቅደም ተከተል በመሞከር የሚሰራውን መምረጥ
+    for (const modelName of CANDIDATE_MODELS) {
+      try {
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey.trim()}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: modelName,
+            messages: Array.isArray(messages) ? messages : [],
+            temperature: 0.7
+          })
+        });
 
-    // 3. Dispatch call to Groq API
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY.trim()}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: selectedGroqModel,
-        messages: cleanedMessages,
-        temperature: 0.7
-      })
-    });
+        const data = await response.json();
 
-    const data = await response.json();
+        if (response.ok && data.choices && data.choices.length > 0) {
+          return res.status(200).json(data);
+        }
 
-    if (!response.ok) {
-      const errorMessage = data.error?.message || JSON.stringify(data.error) || 'Groq API request failed';
-      return res.status(response.status).json({ error: errorMessage });
+        lastErrorMessage = data.error?.message || JSON.stringify(data.error);
+      } catch (err) {
+        lastErrorMessage = err.message;
+      }
     }
 
-    return res.status(200).json(data);
+    // ሁሉም ሞዴሎች ካልሰሩ የተፈጠረውን ኤረር ማሳየት
+    return res.status(400).json({ error: 'All models failed. Details: ' + lastErrorMessage });
 
   } catch (error) {
-    return res.status(500).json({ error: 'Proxy Error: ' + error.message });
+    return res.status(500).json({ error: 'Proxy Server Error: ' + error.message });
   }
 }
