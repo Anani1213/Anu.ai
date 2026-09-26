@@ -1,68 +1,76 @@
-// api/chat.js - Fixed CORS & Model Proxy for Vercel
-export default async function handler(req, res) {
-  // 1. Explicit CORS Headers Setup (GitHub Pages ጥሪ እንዲቀበል)
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
-  );
+// api/chat.js
 
-  // 2. Handle CORS Preflight Options Request
+export default async function handler(req, res) {
+  // 1. የ CORS ራስጌዎችን ያዘጋጁ (የእርስዎን የቀጥታ ጣቢያ አድራሻ ይተኩ)
+  res.setHeader('Access-Control-Allow-Origin', 'https://your-app-name.vercel.app');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  // 2. የ OPTIONS ጥያቄን (Preflight) ያስተናግዱ
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
+  // 3. የ POST ጥያቄ ብቻ እንዲሆን ያረጋግጡ
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // 4. የ Groq API key ን ከ Environment Variable ያንብቡ
+  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
+  if (!GROQ_API_KEY) {
+    return res.status(500).json({ error: 'API key not configured on server' });
+  }
+
   try {
-    const { messages, model } = req.body || {};
-    const apiKey = (process.env.GROQ_API_KEY || '').trim();
-
-    if (!apiKey) {
-      return res.status(500).json({ error: 'GROQ_API_KEY is missing in Vercel Environment Variables.' });
-    }
-
-    // 3. Custom UI Engine IDs -> Active Groq Models Map
-    const GROQ_MODEL_MAP = {
-      'openai/gpt-oss-120b': 'llama-3.1-8b-instant',
-      'openai/gpt-oss-20b': 'llama-3.1-8b-instant',
-      'qwen/qwen3-32b': 'llama-3.1-8b-instant',
-      'meta-llama/llama-4-scout-17b-16e-instruct': 'llama-3.1-8b-instant'
-    };
-
-    const targetModel = GROQ_MODEL_MAP[model] || 'llama-3.1-8b-instant';
-
-    let cleanedMessages = Array.isArray(messages)
-      ? messages.filter(m => m && m.role && m.content).map(m => ({ role: String(m.role), content: String(m.content) }))
-      : [{ role: 'user', content: 'Hi' }];
-
-    // 4. Fetch to Groq API
+    // 5. ከ Frontend የመጣውን መረጃ ወደ Groq ይላኩ
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        model: targetModel,
-        messages: cleanedMessages,
-        temperature: 0.7
-      })
+      body: JSON.stringify(req.body) // req.body ከ frontend የመጣው ሙሉ payload ነው
     });
 
-    const data = await response.json();
-
+    // 6. ምላሹን ወደ Frontend ይላኩ
     if (!response.ok) {
-      return res.status(response.status).json({ error: data.error?.message || 'Groq Request Failed' });
+      const errorData = await response.json();
+      return res.status(response.status).json(errorData);
     }
 
+    // ለ Streaming (SSE) ምላሽ
+    if (response.body) {
+      // የ Content-Type ን ያስተላልፉ
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      // የ Stream ን ወደ ውጭ ይላኩ
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(decoder.decode(value));
+        }
+      } catch (streamError) {
+        console.error('Stream error:', streamError);
+      } finally {
+        res.end();
+      }
+      return;
+    }
+
+    // ለተለመደ (Non-streaming) ምላሽ
+    const data = await response.json();
     return res.status(200).json(data);
 
   } catch (error) {
-    return res.status(500).json({ error: 'Backend Server Error: ' + error.message });
+    console.error('Handler error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 }
