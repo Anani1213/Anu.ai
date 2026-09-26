@@ -1,6 +1,6 @@
-// api/chat.js - Clean Production Handler for Groq API
+// api/chat.js - Universal Multi-Provider Proxy (Supports OpenRouter & Groq)
 export default async function handler(req, res) {
-  // 1. CORS Headers Setup
+  // CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -18,75 +18,62 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { messages } = req.body || {};
-    const rawApiKey = process.env.GROQ_API_KEY;
+    const { messages, model } = req.body || {};
+    const apiKey = (process.env.GROQ_API_KEY || process.env.OPENROUTER_API_KEY || '').trim();
 
-    if (!rawApiKey) {
-      return res.status(500).json({ error: 'GROQ_API_KEY is missing in Vercel Environment Variables.' });
+    if (!apiKey) {
+      return res.status(500).json({ error: 'API Key is missing in Vercel Environment Variables.' });
     }
 
-    const apiKey = rawApiKey.trim();
+    // Payload Cleanup
+    let cleanedMessages = Array.isArray(messages)
+      ? messages.filter(m => m && m.role && m.content).map(m => ({ role: String(m.role), content: String(m.content) }))
+      : [{ role: 'user', content: 'Hi' }];
 
-    // 2. Message Payload Sanitization
-    let cleanedMessages = [];
-    if (Array.isArray(messages)) {
-      cleanedMessages = messages
-        .filter(msg => msg && msg.role && msg.content)
-        .map(msg => ({
-          role: String(msg.role),
-          content: String(msg.content)
-        }));
+    // Detect Provider Type based on API Key prefix
+    const isOpenRouter = apiKey.startsWith('sk-or-');
+    
+    let targetEndpoint = isOpenRouter
+      ? 'https://openrouter.ai/api/v1/chat/completions'
+      : 'https://api.groq.com/openai/v1/chat/completions';
+
+    let targetModel = model || 'openai/gpt-oss-120b';
+
+    // If using Groq API key, map OpenRouter models to active Groq equivalents
+    if (!isOpenRouter) {
+      const GROQ_MODEL_MAP = {
+        'openai/gpt-oss-120b': 'llama-3.3-70b-versatile',
+        'openai/gpt-oss-20b': 'llama-3.1-8b-instant',
+        'qwen/qwen3-32b': 'qwen-2.5-coder-32b',
+        'meta-llama/llama-4-scout-17b-16e-instruct': 'llama-3.1-8b-instant'
+      };
+      targetModel = GROQ_MODEL_MAP[model] || 'llama-3.3-70b-versatile';
     }
 
-    if (cleanedMessages.length === 0) {
-      cleanedMessages = [{ role: 'user', content: 'Hi' }];
-    }
-
-    // 3. Active & Guaranteed Groq Models (Deprecated models like gemma2 are removed)
-    const ACTIVE_MODELS = [
-      'llama-3.3-70b-versatile',
-      'llama-3.1-8b-instant',
-      'llama3-70b-8192',
-      'llama3-8b-8192',
-      'mixtral-8x7b-32768'
-    ];
-
-    let errorsLog = [];
-
-    // 4. Try active models sequentially
-    for (const modelName of ACTIVE_MODELS) {
-      try {
-        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: modelName,
-            messages: cleanedMessages,
-            temperature: 0.7
-          })
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.choices && data.choices.length > 0) {
-          return res.status(200).json(data);
-        }
-
-        const errDetail = data.error?.message || JSON.stringify(data);
-        errorsLog.push(`${modelName}: ${errDetail}`);
-      } catch (err) {
-        errorsLog.push(`${modelName}: ${err.message}`);
-      }
-    }
-
-    return res.status(400).json({ 
-      error: 'Groq API Request Failed. Details: ' + errorsLog.join(' | ') 
+    const response = await fetch(targetEndpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        ...(isOpenRouter ? { 'HTTP-Referer': 'https://anu-ai.vercel.app', 'X-Title': 'Anu AI' } : {})
+      },
+      body: JSON.stringify({
+        model: targetModel,
+        messages: cleanedMessages,
+        temperature: 0.7
+      })
     });
 
+    const data = await response.json();
+
+    if (!response.ok) {
+      const errText = data.error?.message || JSON.stringify(data.error) || 'API Request Failed';
+      return res.status(response.status).json({ error: errText });
+    }
+
+    return res.status(200).json(data);
+
   } catch (error) {
-    return res.status(500).json({ error: 'Server Error: ' + error.message });
+    return res.status(500).json({ error: 'Proxy Server Error: ' + error.message });
   }
 }
