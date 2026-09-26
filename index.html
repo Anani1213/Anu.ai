@@ -30,6 +30,7 @@
 </script>
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -317,6 +318,46 @@ input,textarea,select{ font-family:inherit; }
 }
 
 /* ============================================================
+   TELEGRAM BADGE + STYLES
+   ============================================================ */
+.tg-badge{
+  display:inline-flex; align-items:center; gap:5px;
+  padding:3px 8px; border-radius:8px;
+  background:rgba(0,136,204,.15);
+  border:1px solid rgba(0,136,204,.35);
+  color:#4FC3F7; font-size:10px; font-weight:700;
+  letter-spacing:.06em; text-transform:uppercase;
+  margin-left:6px;
+}
+.tg-badge svg{ width:10px; height:10px; }
+.avatar--tg{
+  background:linear-gradient(135deg,#229ED9,#0088CC) !important;
+  color:#fff !important;
+  position:relative;
+}
+.avatar--tg::after{
+  content:'';
+  position:absolute; bottom:-2px; right:-2px;
+  width:14px; height:14px; border-radius:50%;
+  background:#229ED9; border:2px solid var(--obsidian);
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'><path d='M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z'/></svg>");
+  background-size:9px; background-repeat:no-repeat;
+  background-position:center;
+  z-index:2;
+}
+.auth-telegram{
+  display:flex; align-items:center; justify-content:center; gap:10px;
+  padding:13px 18px; border-radius:13px; cursor:pointer;
+  background:linear-gradient(135deg,#229ED9,#0088CC);
+  color:#fff; font-weight:700; font-size:14.5px;
+  border:none; font-family:inherit;
+  box-shadow:0 12px 34px -12px rgba(34,158,217,.85);
+  transition:all .2s ease; width:100%;
+}
+.auth-telegram:hover{ transform:translateY(-1px); box-shadow:0 18px 42px -12px rgba(34,158,217,1); }
+.auth-telegram svg{ width:18px; height:18px; }
+
+/* ============================================================
    APP SHELL
    ============================================================ */
 #app{ position:relative; z-index:1; display:flex; height:100vh; height:100dvh; }
@@ -439,11 +480,13 @@ input,textarea,select{ font-family:inherit; }
   font-weight:800; font-size:14px; color:#04121A;
   box-shadow:0 0 18px -4px rgba(0,242,254,.6);
   transition:box-shadow .25s ease;
+  overflow:hidden;
 }
 .profile-card__meta{ flex:1; min-width:0; }
 .profile-card__name{
   font-size:13px; font-weight:600; color:var(--crystal);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  display:flex; align-items:center;
 }
 .profile-card__email{
   font-size:10.8px; color:#7C8393;
@@ -965,6 +1008,11 @@ input,textarea,select{ font-family:inherit; }
       <button class="btn-primary" type="submit" id="authSubmit" style="margin-top:16px;">Sign In</button>
     </form>
 
+    <p style="margin:14px 0 0;text-align:center;font-size:11.5px;color:var(--dim2);line-height:1.6;">
+      💡 Opening this from Telegram?<br>
+      <span style="color:#4FC3F7;">Your account will be created automatically.</span>
+    </p>
+
     <div style="display:flex;align-items:center;gap:12px;margin:20px 0 16px;">
       <div style="flex:1;height:1px;background:#22252F;"></div>
       <span style="font-size:10.6px;color:var(--dim2);letter-spacing:.16em;font-weight:600;">OR</span>
@@ -1207,7 +1255,7 @@ input,textarea,select{ font-family:inherit; }
 <script>
 /* ============================================================
    ANU AI — NEURAL INTELLIGENCE PLATFORM
-   Full runtime · Firebase Auth + Firestore + Secure local fallback
+   Full runtime · Firebase Auth + Firestore + Telegram WebApp
    ============================================================ */
 'use strict';
 
@@ -1295,16 +1343,10 @@ function storageKey(suffix) {
   const id = state.user ? state.user.uid : "anon";
   return "anu_" + suffix + "_" + id;
 }
-function isCloudUser() {
-  return !!(db && state.user && state.user.uid &&
-    !state.user.uid.startsWith("guest_") &&
-    !state.user.uid.startsWith("local_"));
-}
 
 /* ============================================================
-   SECURE PASSWORD HASHING (for local fallback only)
+   SECURE PASSWORD HASHING (local fallback only)
    Web Crypto PBKDF2-SHA256 · 100,000 iterations · 16-byte salt
-   Passwords are NEVER stored in plaintext.
    ============================================================ */
 async function hashPassword(password, saltHex) {
   const enc = new TextEncoder();
@@ -1316,10 +1358,7 @@ async function hashPassword(password, saltHex) {
     { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
     keyMaterial, 256
   );
-  return {
-    hash: bytesToHex(new Uint8Array(bits)),
-    salt: bytesToHex(salt)
-  };
+  return { hash: bytesToHex(new Uint8Array(bits)), salt: bytesToHex(salt) };
 }
 function bytesToHex(bytes) {
   return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
@@ -1332,6 +1371,86 @@ function hexToBytes(hex) {
 async function verifyPassword(password, storedHash, storedSalt) {
   const { hash } = await hashPassword(password, storedSalt);
   return hash === storedHash;
+}
+
+/* ============================================================
+   TELEGRAM USER DETECTION
+   ============================================================ */
+function detectTelegramUser() {
+  const explicitlyLoggedOut = localStorage.getItem("anu_tg_logged_out") === "1";
+  let tgUser = null;
+
+  // --- 1. Telegram WebApp SDK ---
+  try {
+    const tg = window.Telegram && window.Telegram.WebApp;
+    if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
+      const u = tg.initDataUnsafe.user;
+      tgUser = {
+        uid: "tg_" + u.id,
+        telegramId: u.id,
+        name: [u.first_name, u.last_name].filter(Boolean).join(" ") || u.username || "Telegram User",
+        username: u.username || null,
+        email: (u.username ? "@" + u.username : "tg_" + u.id + "@telegram"),
+        photo: u.photo_url || null,
+        languageCode: u.language_code || "en",
+        isTelegram: true
+      };
+      try { tg.ready(); } catch (e) {}
+      try { tg.expand(); } catch (e) {}
+      try { tg.setHeaderColor && tg.setHeaderColor("#0D0E12"); } catch (e) {}
+      try { tg.setBackgroundColor && tg.setBackgroundColor("#0D0E12"); } catch (e) {}
+    }
+  } catch (e) {}
+
+  // --- 2. URL query params ---
+  if (!tgUser) {
+    try {
+      const params = new URLSearchParams(location.search);
+      const tgId = params.get("tg_id");
+      if (tgId && /^[0-9]+$/.test(tgId)) {
+        tgUser = {
+          uid: "tg_" + tgId,
+          telegramId: parseInt(tgId, 10),
+          name: params.get("tg_name") || "Telegram User",
+          username: params.get("tg_username") || null,
+          email: (params.get("tg_username") ? "@" + params.get("tg_username") : "tg_" + tgId + "@telegram"),
+          photo: params.get("tg_photo") || null,
+          isTelegram: true
+        };
+      }
+    } catch (e) {}
+  }
+
+  // --- 3. Saved session ---
+  if (!tgUser && !explicitlyLoggedOut) {
+    try {
+      const saved = JSON.parse(localStorage.getItem("anu_tg_last_session") || "null");
+      if (saved && saved.uid && saved.uid.startsWith("tg_")) {
+        tgUser = saved;
+      }
+    } catch (e) {}
+  }
+
+  // Persist for next visit
+  if (tgUser && !explicitlyLoggedOut) {
+    try {
+      localStorage.setItem("anu_tg_last_session", JSON.stringify(tgUser));
+      localStorage.removeItem("anu_tg_logged_out");
+    } catch (e) {}
+  }
+
+  return tgUser;
+}
+
+function isTelegramUser() {
+  return !!(state.user && state.user.isTelegram && state.user.uid && state.user.uid.startsWith("tg_"));
+}
+
+function isCloudUser() {
+  if (isTelegramUser()) return !!db;
+  return !!(db && state.user && state.user.uid &&
+    !state.user.uid.startsWith("guest_") &&
+    !state.user.uid.startsWith("local_"));
 }
 
 /* ============================================================
@@ -1432,13 +1551,20 @@ function initFirebase() {
   }
 }
 
+function firestoreUserPath() {
+  if (isTelegramUser()) {
+    return db.collection("telegram_users").doc(String(state.user.telegramId));
+  }
+  return db.collection("users").doc(state.user.uid);
+}
+
 async function loadFromFirestore() {
+  if (!db || !state.user) return false;
   if (!isCloudUser()) return false;
   try {
-    const docRef = db.collection("users").doc(state.user.uid);
+    const docRef = firestoreUserPath();
     const snap = await docRef.get();
     if (!snap.exists) {
-      // First cloud login — migrate local cache if present
       const existingLocal = localStorage.getItem("anu_chats_" + state.user.uid);
       if (existingLocal) {
         try { state.chats = JSON.parse(existingLocal) || []; } catch (e) {}
@@ -1464,7 +1590,7 @@ async function loadFromFirestore() {
 }
 
 async function pushToFirestore() {
-  if (!isCloudUser() || firestoreSuspended) return;
+  if (!db || !state.user || !isCloudUser() || firestoreSuspended) return;
   try {
     const payload = {
       chats: state.chats,
@@ -1475,7 +1601,17 @@ async function pushToFirestore() {
       name: state.user.name || "",
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
-    await db.collection("users").doc(state.user.uid).set(payload, { merge: true });
+    if (isTelegramUser()) {
+      payload.telegramId = state.user.telegramId;
+      payload.telegramUsername = state.user.username || null;
+      payload.telegramPhoto = state.user.photo || null;
+      payload.lastSeen = firebase.firestore.FieldValue.serverTimestamp();
+      if (!state.user._firestoreCreated) {
+        payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+        state.user._firestoreCreated = true;
+      }
+    }
+    await firestoreUserPath().set(payload, { merge: true });
     console.log("[Anu] Saved to Firestore");
   } catch (err) {
     console.warn("[Anu] Firestore save failed:", err);
@@ -1536,6 +1672,16 @@ function resetAuthForm() {
 }
 
 function initAuth() {
+  // 1. TELEGRAM AUTO-LOGIN (highest priority)
+  const tgUser = detectTelegramUser();
+  if (tgUser) {
+    console.log("[Anu] Telegram user detected:", tgUser.username || tgUser.telegramId);
+    state.user = tgUser;
+    enterApp();
+    return;
+  }
+
+  // 2. FIREBASE AUTH
   if (state.firebaseReady) {
     firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL)
       .catch(() => {})
@@ -1549,6 +1695,7 @@ function initAuth() {
             };
             await enterApp();
           } else {
+            // No Firebase user AND no Telegram → show auth screen
             state.user = null;
             state.chats = [];
             state.currentChatId = null;
@@ -1561,6 +1708,7 @@ function initAuth() {
         });
       });
   } else {
+    // Local fallback (no Firebase)
     state.localMode = true;
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem("anu_local_session") || "null"); } catch (e) { saved = null; }
@@ -1655,7 +1803,7 @@ async function handleAuthSubmit(e) {
       showAuthError(friendlyAuthError(err));
     }
   } else {
-    // Local fallback with secure PBKDF2 hashing
+    // Local fallback with PBKDF2 hashing
     try {
       const accounts = JSON.parse(localStorage.getItem("anu_local_accounts") || "{}");
       if (authMode === "signup") {
@@ -1717,10 +1865,23 @@ function friendlyAuthError(err) {
 async function signOutUser() {
   closeSettings();
   const wasCloud = isCloudUser();
+  const wasTelegram = isTelegramUser();
+
   if (wasCloud) { try { await pushToFirestore(); } catch (e) {} }
 
-  if (state.firebaseReady) { try { await firebase.auth().signOut(); } catch (e) {} }
-  else { localStorage.removeItem("anu_local_session"); }
+  if (wasTelegram) {
+    try {
+      localStorage.removeItem("anu_tg_last_session");
+      localStorage.setItem("anu_tg_logged_out", "1");
+    } catch (e) {}
+  }
+
+  if (state.firebaseReady && state.user && !state.user.isTelegram) {
+    try { await firebase.auth().signOut(); } catch (e) {}
+  }
+  if (state.localMode) {
+    localStorage.removeItem("anu_local_session");
+  }
 
   state.user = null;
   state.chats = [];
@@ -2413,12 +2574,52 @@ function applyEngineLabel() {
 function updateProfileUI() {
   if (!state.user) return;
   const initial = (state.user.name || state.user.email || "U").trim().charAt(0).toUpperCase() || "U";
-  $("profileAvatar").textContent = initial;
-  $("profileName").textContent = state.user.name || "User";
+  const isTG = isTelegramUser();
+
+  // Sidebar avatar
+  const avatarEl = $("profileAvatar");
+  avatarEl.textContent = initial;
+  avatarEl.style.backgroundImage = "";
+  if (isTG) {
+    avatarEl.classList.add("avatar--tg");
+    if (state.user.photo) {
+      avatarEl.style.backgroundImage = `url("${state.user.photo}")`;
+      avatarEl.style.backgroundSize = "cover";
+      avatarEl.style.backgroundPosition = "center";
+      avatarEl.textContent = "";
+    }
+  } else {
+    avatarEl.classList.remove("avatar--tg");
+  }
+
+  // Name (with Telegram badge)
+  const nameEl = $("profileName");
+  nameEl.innerHTML = escapeHtml(state.user.name || "User") +
+    (isTG ? ' <span class="tg-badge"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/></svg>TG</span>' : '');
+
   $("profileEmail").textContent = state.user.email || "—";
-  $("settingsAvatar").textContent = initial;
-  $("settingsName").textContent = state.user.name || "User";
+
+  // Settings modal avatar
+  const sAvatar = $("settingsAvatar");
+  sAvatar.textContent = initial;
+  sAvatar.style.backgroundImage = "";
+  if (isTG) {
+    sAvatar.classList.add("avatar--tg");
+    if (state.user.photo) {
+      sAvatar.style.backgroundImage = `url("${state.user.photo}")`;
+      sAvatar.style.backgroundSize = "cover";
+      sAvatar.style.backgroundPosition = "center";
+      sAvatar.textContent = "";
+    }
+  } else {
+    sAvatar.classList.remove("avatar--tg");
+  }
+
+  $("settingsName").innerHTML = escapeHtml(state.user.name || "User") +
+    (isTG ? ' <span class="tg-badge">Telegram</span>' : '');
   $("settingsEmail").textContent = state.user.email || "—";
+
+  // Engine dropdown
   const sel = $("settingsEngineSelect");
   sel.innerHTML = "";
   ENGINES.forEach((engine, idx) => {
@@ -2430,6 +2631,7 @@ function updateProfileUI() {
   });
   sel.value = String(state.preferredEngine);
 }
+
 function openSettings() {
   $("systemPromptInput").value = state.systemPrompt || "";
   $("settingsEngineSelect").value = String(state.preferredEngine);
@@ -2620,8 +2822,10 @@ function boot() {
 
   initFirebase();
 
+  // Check if opened inside Telegram → faster splash
+  const isTG = !!(window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.user);
   const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const SPLASH_MS = reduceMotion ? 900 : 2500;
+  const SPLASH_MS = reduceMotion || isTG ? 900 : 2500;
 
   const splash = $("splash");
   setTimeout(() => {
