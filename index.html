@@ -16,14 +16,9 @@
     theme: {
       extend: {
         colors: {
-          obsidian: '#0D0E12',
-          surface: '#16181E',
-          surface2: '#1C1F27',
-          line: '#2A2D37',
-          cyanx: '#00F2FE',
-          mintx: '#00FFC6',
-          crystal: '#F3F4F6',
-          silver: '#9CA3AF'
+          obsidian: '#0D0E12', surface: '#16181E', surface2: '#1C1F27',
+          line: '#2A2D37', cyanx: '#00F2FE', mintx: '#00FFC6',
+          crystal: '#F3F4F6', silver: '#9CA3AF'
         },
         fontFamily: {
           sans: ['Inter', 'system-ui', 'sans-serif'],
@@ -39,42 +34,26 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
 <style>
 /* ============================================================
    TOKENS
    ============================================================ */
 :root{
-  --obsidian:#0D0E12;
-  --surface:#16181E;
-  --surface-2:#1C1F27;
-  --field:#111318;
-  --line:#2A2D37;
-  --cyan:#00F2FE;
-  --mint:#00FFC6;
-  --blue:#4FACFE;
-  --crystal:#F3F4F6;
-  --silver:#9CA3AF;
-  --muted:#9CA3AF;
-  --dim:#6B7280;
-  --dim2:#5C6270;
+  --obsidian:#0D0E12; --surface:#16181E; --surface-2:#1C1F27;
+  --field:#111318; --line:#2A2D37;
+  --cyan:#00F2FE; --mint:#00FFC6; --blue:#4FACFE;
+  --crystal:#F3F4F6; --muted:#9CA3AF; --dim:#6B7280; --dim2:#5C6270;
   --danger:#FF6B81;
-  --ease:cubic-bezier(.16,1,.3,1);
-  --ease-2:cubic-bezier(.4,0,.2,1);
 }
-
 *{ margin:0; padding:0; box-sizing:border-box; }
 html,body{ height:100%; }
 body{
-  background:var(--obsidian);
-  color:var(--crystal);
+  background:var(--obsidian); color:var(--crystal);
   font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
-  overflow:hidden;
-  -webkit-font-smoothing:antialiased;
-  -moz-osx-font-smoothing:grayscale;
-  text-rendering:optimizeLegibility;
-  font-size:15px;
-  line-height:1.5;
+  overflow:hidden; -webkit-font-smoothing:antialiased;
+  font-size:15px; line-height:1.5;
 }
 button{ font-family:inherit; cursor:pointer; }
 input,textarea,select{ font-family:inherit; }
@@ -99,74 +78,47 @@ input,textarea,select{ font-family:inherit; }
   -webkit-background-clip:text; background-clip:text;
   -webkit-text-fill-color:transparent; color:transparent;
 }
-.glass{
-  background:rgba(22,24,30,.72);
-  backdrop-filter:blur(18px) saturate(140%);
-  -webkit-backdrop-filter:blur(18px) saturate(140%);
-  border:1px solid var(--line);
-}
 
 /* ============================================================
-   NEURAL EYE LOGO (Shared SVG styling)
+   NEURAL EYE LOGO
    ============================================================ */
 .anu-logo{
-  display:block;
-  overflow:visible;
-  filter:drop-shadow(0 0 10px rgba(0,242,254,.38))
-         drop-shadow(0 0 32px rgba(0,255,198,.13));
+  display:block; overflow:visible;
+  filter:drop-shadow(0 0 10px rgba(0,242,254,.38)) drop-shadow(0 0 32px rgba(0,255,198,.13));
 }
 .anu-logo .line{
-  fill:none;
-  stroke:url(#anuGrad);
-  stroke-width:7;
-  stroke-linecap:round;
-  stroke-linejoin:round;
+  fill:none; stroke:url(#anuGrad); stroke-width:7;
+  stroke-linecap:round; stroke-linejoin:round;
 }
 .anu-logo .line--bar{ stroke-width:6; }
-
 .anu-logo .logo-shimmer path{
-  fill:none;
-  stroke:#FFFFFF;
-  stroke-width:7;
-  stroke-linecap:round;
-  opacity:0;
-  stroke-dasharray:14 100;
+  fill:none; stroke:#FFFFFF; stroke-width:7; stroke-linecap:round;
+  opacity:0; stroke-dasharray:14 100;
   animation:shimmer 2.2s cubic-bezier(.55,0,.45,1) .85s infinite;
 }
 .anu-logo .logo-shimmer path:nth-child(2){ animation-delay:1s; }
 .anu-logo .logo-shimmer path:nth-child(3){ animation-delay:1.15s; stroke-width:6; }
 @keyframes shimmer{
   0%  { stroke-dashoffset:114; opacity:0; }
-  10% { opacity:.95; }
-  80% { opacity:.95; }
+  10% { opacity:.95; } 80% { opacity:.95; }
   100%{ stroke-dashoffset:14; opacity:0; }
 }
-
 .anu-logo .eye-pulse{
-  transform-box:fill-box;
-  transform-origin:center;
+  transform-box:fill-box; transform-origin:center;
   animation:eyePulse 3s ease-in-out .8s infinite;
 }
-@keyframes eyePulse{
-  0%,100%{ transform:scale(1); }
-  50%    { transform:scale(1.045); }
-}
+@keyframes eyePulse{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.045); } }
 .anu-logo .eye-blink{
-  transform-box:fill-box;
-  transform-origin:center;
+  transform-box:fill-box; transform-origin:center;
   animation:blink 3.6s cubic-bezier(.4,0,.2,1) .8s infinite;
 }
 @keyframes blink{
-  0%,4%  { transform:scaleY(1); }
-  8%     { transform:scaleY(.06); }
-  12%    { transform:scaleY(1); }
-  100%   { transform:scaleY(1); }
+  0%,4%{ transform:scaleY(1); } 8%{ transform:scaleY(.06); }
+  12%{ transform:scaleY(1); } 100%{ transform:scaleY(1); }
 }
 .anu-logo .eye-diamond{
-  fill:rgba(0,242,254,.18);
-  stroke:url(#anuGradSoft);
-  stroke-width:2.4;
-  stroke-linejoin:round;
+  fill:rgba(0,242,254,.18); stroke:url(#anuGradSoft);
+  stroke-width:2.4; stroke-linejoin:round;
   filter:drop-shadow(0 0 4px rgba(0,242,254,.55));
 }
 .anu-logo .eye-iris{
@@ -174,46 +126,33 @@ input,textarea,select{ font-family:inherit; }
   animation:irisDrift 5.5s ease-in-out .8s infinite;
 }
 @keyframes irisDrift{
-  0%  { transform:translate(0,0); }
-  25% { transform:translate(-4px,1px); }
-  50% { transform:translate(0,-1px); }
-  75% { transform:translate(4px,1px); }
+  0%{ transform:translate(0,0); } 25%{ transform:translate(-4px,1px); }
+  50%{ transform:translate(0,-1px); } 75%{ transform:translate(4px,1px); }
   100%{ transform:translate(0,0); }
 }
 .anu-logo .iris-halo{
-  fill:var(--cyan);
-  opacity:.55;
-  transform-box:fill-box;
-  transform-origin:center;
+  fill:var(--cyan); opacity:.55;
+  transform-box:fill-box; transform-origin:center;
   animation:haloPulse 2.4s ease-in-out .8s infinite;
 }
 @keyframes haloPulse{
   0%,100%{ transform:scale(1); opacity:.55; }
-  50%    { transform:scale(1.9); opacity:.08; }
+  50%{ transform:scale(1.9); opacity:.08; }
 }
-.anu-logo .iris-ring{
-  fill:none;
-  stroke:var(--mint);
-  stroke-width:1.6;
-  opacity:.95;
-}
+.anu-logo .iris-ring{ fill:none; stroke:var(--mint); stroke-width:1.6; opacity:.95; }
 .anu-logo .iris-dot{
   fill:#FFFFFF;
   animation:dotGlow 2s ease-in-out .8s infinite;
 }
 @keyframes dotGlow{
   0%,100%{ filter:drop-shadow(0 0 4px #fff) drop-shadow(0 0 9px rgba(0,242,254,.95)); }
-  50%    { filter:drop-shadow(0 0 6px #fff) drop-shadow(0 0 16px rgba(0,255,198,1)); }
+  50%{ filter:drop-shadow(0 0 6px #fff) drop-shadow(0 0 16px rgba(0,255,198,1)); }
 }
-
-/* ---- COMPACT LOGO (dashboard, avatars, sidebar) ----
-   Boosted eye visibility for small sizes */
 .anu-logo.compact .logo-shimmer{ display:none; }
 .anu-logo.compact .line{ stroke-width:9; }
 .anu-logo.compact .line--bar{ stroke-width:8; }
 .anu-logo.compact .eye-diamond{
-  fill:rgba(0,242,254,.32);
-  stroke-width:3.2;
+  fill:rgba(0,242,254,.32); stroke-width:3.2;
   filter:drop-shadow(0 0 5px rgba(0,242,254,.85));
 }
 .anu-logo.compact .iris-halo{ opacity:.75; }
@@ -230,63 +169,46 @@ input,textarea,select{ font-family:inherit; }
   background:var(--obsidian);
   opacity:1; visibility:visible;
   transition:opacity .7s cubic-bezier(.65,0,.35,1), visibility 0s linear .7s;
-  will-change:opacity;
 }
 #splash.is-hidden{ opacity:0; visibility:hidden; }
-
 .splash__glow{
   position:absolute; inset:0; margin:auto;
   width:min(120vmin,920px); height:min(120vmin,920px);
   border-radius:50%; pointer-events:none;
   background:radial-gradient(circle at center,
-      rgba(0,242,254,.10) 0%,
-      rgba(0,242,254,.06) 28%,
-      rgba(0,255,198,.028) 46%,
-      rgba(0,242,254,0) 70%);
-  filter:blur(8px);
-  animation:glowBreathe 5s ease-in-out infinite;
+      rgba(0,242,254,.10) 0%, rgba(0,242,254,.06) 28%,
+      rgba(0,255,198,.028) 46%, rgba(0,242,254,0) 70%);
+  filter:blur(8px); animation:glowBreathe 5s ease-in-out infinite;
 }
 @keyframes glowBreathe{
-  0%,100%{ transform:scale(1); opacity:.9; }
-  50%    { transform:scale(1.09); opacity:1; }
+  0%,100%{ transform:scale(1); opacity:.9; } 50%{ transform:scale(1.09); opacity:1; }
 }
-
 .splash__logo{
   position:relative;
   animation:logoIn 800ms cubic-bezier(.22,1,.36,1) both;
-  will-change:transform,opacity,filter;
 }
 @keyframes logoIn{
-  0%  { opacity:0; transform:scale(.8); filter:brightness(.35); }
-  55% { opacity:1; filter:brightness(1.75); }
+  0%{ opacity:0; transform:scale(.8); filter:brightness(.35); }
+  55%{ opacity:1; filter:brightness(1.75); }
   100%{ opacity:1; transform:scale(1); filter:brightness(1); }
 }
-.splash__logo .anu-logo{
-  width:clamp(148px,38vw,200px);
-  height:auto;
-  aspect-ratio:1/1;
-}
+.splash__logo .anu-logo{ width:clamp(148px,38vw,200px); height:auto; aspect-ratio:1/1; }
 .splash__word{
-  position:relative;
-  margin-top:26px;
-  font-size:12px; font-weight:600;
-  letter-spacing:.6em; text-indent:.6em;
+  position:relative; margin-top:26px;
+  font-size:12px; font-weight:600; letter-spacing:.6em; text-indent:.6em;
   text-transform:uppercase;
   background:linear-gradient(90deg,var(--cyan),var(--mint));
   -webkit-background-clip:text; background-clip:text;
-  color:transparent; -webkit-text-fill-color:transparent;
-  opacity:0;
+  color:transparent; -webkit-text-fill-color:transparent; opacity:0;
   animation:wordIn 900ms cubic-bezier(.22,1,.36,1) 420ms both;
 }
 @keyframes wordIn{
-  0%  { opacity:0; transform:translateY(9px); }
-  100%{ opacity:1; transform:translateY(0); }
+  0%{ opacity:0; transform:translateY(9px); } 100%{ opacity:1; transform:translateY(0); }
 }
 .splash__sub{
   position:relative; margin-top:12px;
   font-size:10.5px; letter-spacing:.42em; text-transform:uppercase;
-  color:var(--dim2); font-weight:600;
-  opacity:0;
+  color:var(--dim2); font-weight:600; opacity:0;
   animation:wordIn 900ms cubic-bezier(.22,1,.36,1) 700ms both;
 }
 
@@ -297,35 +219,25 @@ input,textarea,select{ font-family:inherit; }
   position:fixed; inset:0; z-index:8000;
   display:flex; align-items:center; justify-content:center;
   padding:20px; overflow-y:auto;
-  background:
-    radial-gradient(1000px 620px at 50% -10%, rgba(0,242,254,.10), transparent 60%),
-    var(--obsidian);
+  background:radial-gradient(1000px 620px at 50% -10%, rgba(0,242,254,.10), transparent 60%), var(--obsidian);
   animation:fadeIn .5s ease;
 }
 @keyframes fadeIn{ from{opacity:0} to{opacity:1} }
-
 .auth-card{
-  position:relative;
-  width:100%; max-width:430px;
+  position:relative; width:100%; max-width:430px;
   background:linear-gradient(180deg, rgba(28,31,39,.92), rgba(22,24,30,.96));
   border:1px solid var(--line); border-radius:26px;
   padding:34px 30px 28px;
   backdrop-filter:blur(26px) saturate(150%);
   -webkit-backdrop-filter:blur(26px) saturate(150%);
-  box-shadow:
-    0 40px 100px -30px rgba(0,0,0,.9),
-    0 0 0 1px rgba(0,242,254,.05) inset;
+  box-shadow:0 40px 100px -30px rgba(0,0,0,.9), 0 0 0 1px rgba(0,242,254,.05) inset;
   animation:cardIn .6s cubic-bezier(.16,1,.3,1) both;
 }
 @keyframes cardIn{
   from{ opacity:0; transform:translateY(22px) scale(.97); }
-  to  { opacity:1; transform:none; }
+  to{ opacity:1; transform:none; }
 }
-
-.auth-brand{
-  display:flex; flex-direction:column; align-items:center;
-  margin-bottom:26px;
-}
+.auth-brand{ display:flex; flex-direction:column; align-items:center; margin-bottom:26px; }
 .auth-brand__mark{
   width:72px; height:72px; position:relative;
   display:grid; place-items:center;
@@ -334,33 +246,26 @@ input,textarea,select{ font-family:inherit; }
 }
 .auth-brand__mark .anu-logo{ width:72px; height:72px; }
 .auth-brand__name{
-  margin:16px 0 5px;
-  font-size:24px; font-weight:800; letter-spacing:-.03em;
+  margin:16px 0 5px; font-size:24px; font-weight:800; letter-spacing:-.03em;
   background:linear-gradient(100deg,#00F2FE 0%,#00FFC6 55%,#4FACFE 100%);
   -webkit-background-clip:text; background-clip:text;
   -webkit-text-fill-color:transparent; color:transparent;
 }
-.auth-brand__tag{
-  font-size:12.6px; color:#7C8393; letter-spacing:.04em;
-}
-
+.auth-brand__tag{ font-size:12.6px; color:#7C8393; letter-spacing:.04em; }
 .auth-tabs{
   display:flex; gap:6px; padding:5px; border-radius:14px;
-  background:#0F1117; border:1px solid #22252F;
-  margin-bottom:22px;
+  background:#0F1117; border:1px solid #22252F; margin-bottom:22px;
 }
 .auth-tab{
   flex:1; padding:9px 10px; border-radius:10px;
-  font-size:13.5px; font-weight:600;
-  color:var(--muted); background:transparent; border:none;
-  cursor:pointer; transition:all .25s ease;
+  font-size:13.5px; font-weight:600; color:var(--muted);
+  background:transparent; border:none; cursor:pointer;
+  transition:all .25s ease;
 }
 .auth-tab.active{
-  color:#04121A;
-  background:linear-gradient(135deg,#00F2FE,#00FFC6);
+  color:#04121A; background:linear-gradient(135deg,#00F2FE,#00FFC6);
   box-shadow:0 6px 20px -6px rgba(0,242,254,.7);
 }
-
 .field{
   width:100%; padding:13px 15px; border-radius:13px;
   background:#0F1117; border:1px solid #22252F;
@@ -370,61 +275,51 @@ input,textarea,select{ font-family:inherit; }
 .field::placeholder{ color:var(--dim2); }
 .field:focus{
   border-color:rgba(0,242,254,.55);
-  box-shadow:0 0 0 4px rgba(0,242,254,.09);
-  background:#11131A;
+  box-shadow:0 0 0 4px rgba(0,242,254,.09); background:#11131A;
 }
-
+.field:disabled{ opacity:.6; cursor:not-allowed; }
 .btn-primary{
   width:100%; padding:13px 18px; border-radius:13px; border:none;
   cursor:pointer; font-family:inherit;
   background:linear-gradient(135deg,#00F2FE,#00FFC6);
   color:#04121A; font-weight:700; font-size:14.5px;
-  letter-spacing:.01em;
   transition:transform .18s ease, box-shadow .25s ease, opacity .2s;
   box-shadow:0 12px 34px -12px rgba(0,242,254,.85);
   position:relative; overflow:hidden;
 }
-.btn-primary:hover:not(:disabled){
-  transform:translateY(-1px);
-  box-shadow:0 18px 42px -12px rgba(0,242,254,1);
-}
+.btn-primary:hover:not(:disabled){ transform:translateY(-1px); box-shadow:0 18px 42px -12px rgba(0,242,254,1); }
 .btn-primary:active:not(:disabled){ transform:translateY(0) scale(.99); }
 .btn-primary:disabled{ opacity:.55; cursor:not-allowed; }
-
 .ghost-btn{
   width:100%; padding:11px 16px; border-radius:12px; cursor:pointer;
   background:#1C1F27; border:1px solid var(--line);
   color:#D6DAE3; font-weight:600; font-size:13.4px; font-family:inherit;
-  transition:all .2s ease; display:flex; align-items:center; justify-content:center; gap:8px;
+  transition:all .2s ease;
+  display:flex; align-items:center; justify-content:center; gap:8px;
 }
 .ghost-btn:hover{ background:#22262F; border-color:#3A3F4D; color:var(--crystal); }
-
 .danger-btn{
   width:100%; padding:11px 16px; border-radius:12px; cursor:pointer;
   background:rgba(255,107,129,.1); border:1px solid rgba(255,107,129,.32);
   color:#FF8296; font-weight:600; font-size:13.4px; font-family:inherit;
-  transition:all .2s ease; display:flex; align-items:center; justify-content:center; gap:8px;
+  transition:all .2s ease;
+  display:flex; align-items:center; justify-content:center; gap:8px;
 }
 .danger-btn:hover{ background:rgba(255,107,129,.2); border-color:rgba(255,107,129,.55); }
-
 .err-text{
   font-size:12.4px; color:#FF8296; margin-top:9px; display:none;
   padding:8px 12px; border-radius:10px;
-  background:rgba(255,107,129,.08);
-  border:1px solid rgba(255,107,129,.2);
+  background:rgba(255,107,129,.08); border:1px solid rgba(255,107,129,.2);
 }
 .err-text.show{ display:block; animation:fadeUp .25s ease; }
 @keyframes fadeUp{
-  from{ opacity:0; transform:translateY(6px); }
-  to  { opacity:1; transform:translateY(0); }
+  from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:translateY(0); }
 }
 
 /* ============================================================
    APP SHELL
    ============================================================ */
 #app{ position:relative; z-index:1; display:flex; height:100vh; height:100dvh; }
-
-/* ---- Sidebar ---- */
 #sidebar{
   width:286px; flex:0 0 286px;
   background:rgba(17,19,25,.86);
@@ -450,11 +345,7 @@ input,textarea,select{ font-family:inherit; }
 }
 #sidebarOverlay.show{ opacity:1; pointer-events:auto; }
 @media (min-width: 901px){ #sidebarOverlay{ display:none; } }
-
-.side-brand{
-  padding:14px 14px 10px;
-  display:flex; align-items:center; gap:10px;
-}
+.side-brand{ padding:14px 14px 10px; display:flex; align-items:center; gap:10px; }
 .side-brand__logo{
   width:40px; height:40px; flex:0 0 40px; position:relative;
   display:grid; place-items:center;
@@ -472,19 +363,15 @@ input,textarea,select{ font-family:inherit; }
 }
 .side-brand__tag{
   font-size:9.6px; color:var(--dim2);
-  letter-spacing:.14em; font-weight:600; text-transform:uppercase;
-  margin-top:2px;
+  letter-spacing:.14em; font-weight:600; text-transform:uppercase; margin-top:2px;
 }
-
 .icon-btn{
   display:grid; place-items:center;
   width:36px; height:36px; border-radius:11px;
   background:transparent; border:1px solid transparent;
-  color:var(--muted); cursor:pointer;
-  transition:all .2s ease;
+  color:var(--muted); cursor:pointer; transition:all .2s ease;
 }
 .icon-btn:hover{ background:#1A1D25; color:var(--crystal); border-color:#262A35; }
-
 .new-chat-btn{
   display:flex; align-items:center; gap:10px;
   width:calc(100% - 28px); margin:4px 14px 10px;
@@ -499,18 +386,19 @@ input,textarea,select{ font-family:inherit; }
   border-color:rgba(0,242,254,.5);
   box-shadow:0 0 26px -8px rgba(0,242,254,.7);
 }
-
 .search-wrap{ position:relative; padding:0 14px 10px; }
-.search-wrap svg{ position:absolute; left:26px; top:calc(50% - 5px); transform:translateY(-50%); color:var(--dim2); }
+.search-wrap svg{
+  position:absolute; left:26px; top:calc(50% - 5px);
+  transform:translateY(-50%); color:var(--dim2);
+}
 .search-input{
   width:100%; padding:9px 12px 9px 34px; border-radius:11px;
   background:#13161D; border:1px solid #22252F;
-  color:var(--crystal); font-size:13px; font-family:inherit; outline:none;
-  transition:all .2s;
+  color:var(--crystal); font-size:13px; font-family:inherit;
+  outline:none; transition:all .2s;
 }
 .search-input::placeholder{ color:var(--dim2); }
 .search-input:focus{ border-color:rgba(0,242,254,.45); box-shadow:0 0 0 3px rgba(0,242,254,.08); }
-
 .hist-group-label{
   font-size:10.5px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
   color:var(--dim2); padding:16px 10px 7px;
@@ -519,28 +407,26 @@ input,textarea,select{ font-family:inherit; }
   display:flex; align-items:center; gap:9px;
   padding:9px 11px; border-radius:11px; cursor:pointer;
   font-size:13.2px; color:#B7BDC9; margin-bottom:2px;
-  border:1px solid transparent;
-  transition:all .18s ease;
+  border:1px solid transparent; transition:all .18s ease;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 .hist-item:hover{ background:#1A1D25; color:var(--crystal); }
 .hist-item.active{
   background:linear-gradient(90deg, rgba(0,242,254,.13), rgba(0,255,198,.05));
-  border-color:rgba(0,242,254,.24);
-  color:#EAF9FF;
+  border-color:rgba(0,242,254,.24); color:#EAF9FF;
 }
 .hist-item .txt{ flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .hist-item .del{
-  opacity:0; flex:0 0 auto; color:var(--dim); transition:opacity .18s, color .18s;
-  background:none; border:none; cursor:pointer; padding:2px; display:grid; place-items:center;
+  opacity:0; flex:0 0 auto; color:var(--dim);
+  transition:opacity .18s, color .18s;
+  background:none; border:none; cursor:pointer;
+  padding:2px; display:grid; place-items:center;
 }
 .hist-item:hover .del{ opacity:1; }
 .hist-item .del:hover{ color:var(--danger); }
-
 .profile-card{
   display:flex; align-items:center; gap:11px;
-  padding:14px 14px 12px; margin:10px 0 0;
-  cursor:pointer;
+  padding:14px 14px 12px; margin:10px 0 0; cursor:pointer;
   transition:all .2s ease; width:100%;
   background:transparent; font-family:inherit; text-align:left;
   border-top:1px solid #1D2029;
@@ -563,8 +449,6 @@ input,textarea,select{ font-family:inherit; }
   font-size:10.8px; color:#7C8393;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-
-/* ---- Header ---- */
 #mainHeader{
   height:62px; flex:0 0 62px;
   display:flex; align-items:center; gap:12px;
@@ -574,13 +458,11 @@ input,textarea,select{ font-family:inherit; }
   backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
   position:relative; z-index:40;
 }
-
 .model-btn{
   display:flex; align-items:center; gap:9px;
   padding:8px 13px; border-radius:12px; cursor:pointer; font-family:inherit;
   background:var(--surface); border:1px solid #262A35; color:var(--crystal);
-  font-size:13.5px; font-weight:600;
-  transition:all .2s ease;
+  font-size:13.5px; font-weight:600; transition:all .2s ease;
 }
 .model-btn:hover{ border-color:rgba(0,242,254,.4); box-shadow:0 0 22px -8px rgba(0,242,254,.6); }
 .model-dot{
@@ -590,25 +472,22 @@ input,textarea,select{ font-family:inherit; }
   animation:dotPulse 2.4s ease-in-out infinite;
 }
 @keyframes dotPulse{ 0%,100%{opacity:1} 50%{opacity:.4} }
-
 .dropdown{
   position:absolute; top:54px; left:0; min-width:340px;
   background:rgba(22,24,30,.97);
   backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px);
   border:1px solid var(--line); border-radius:18px; padding:8px;
   box-shadow:0 30px 70px -20px rgba(0,0,0,.95);
-  z-index:120;
-  animation:dropIn .2s cubic-bezier(.16,1,.3,1);
+  z-index:120; animation:dropIn .2s cubic-bezier(.16,1,.3,1);
 }
 @keyframes dropIn{
-  from{ opacity:0; transform:translateY(-8px) scale(.98); }
-  to  { opacity:1; transform:none; }
+  from{ opacity:0; transform:translateY(-8px) scale(.98); } to{ opacity:1; transform:none; }
 }
 .model-opt{
   display:flex; align-items:center; gap:11px; width:100%;
   padding:10px 11px; border-radius:12px; cursor:pointer; text-align:left;
-  background:transparent; border:1px solid transparent; color:#D6DAE3;
-  font-family:inherit; transition:all .16s ease;
+  background:transparent; border:1px solid transparent;
+  color:#D6DAE3; font-family:inherit; transition:all .16s ease;
 }
 .model-opt:hover{ background:#1E222B; }
 .model-opt.active{
@@ -618,25 +497,21 @@ input,textarea,select{ font-family:inherit; }
 .model-opt .mname{ font-size:13.3px; font-weight:600; color:var(--crystal); }
 .model-opt .mdesc{ font-size:11.4px; color:#7C8393; margin-top:2px; }
 
-/* ---- Chat area ---- */
 #chatScroll{ flex:1; overflow-y:auto; overflow-x:hidden; scroll-behavior:smooth; }
 #messages{ max-width:840px; margin:0 auto; padding:28px 20px 20px; }
-
 .msg{
   display:flex; gap:14px; margin-bottom:26px;
   animation:msgIn .45s cubic-bezier(.16,1,.3,1) both;
 }
 @keyframes msgIn{
-  from{ opacity:0; transform:translateY(12px); }
-  to  { opacity:1; transform:none; }
+  from{ opacity:0; transform:translateY(12px); } to{ opacity:1; transform:none; }
 }
 .msg.user{ justify-content:flex-end; }
 .msg-avatar{
   width:40px; height:40px; border-radius:13px; flex:0 0 auto;
   display:grid; place-items:center;
   background:radial-gradient(circle at center, rgba(0,242,254,.18) 0%, rgba(0,255,198,.06) 55%, transparent 82%);
-  position:relative;
-  margin-top:2px;
+  position:relative; margin-top:2px;
   box-shadow:0 0 24px -8px rgba(0,242,254,.5);
 }
 .msg-avatar .anu-logo{ width:40px; height:40px; }
@@ -654,13 +529,10 @@ input,textarea,select{ font-family:inherit; }
   font-size:11.5px; font-weight:700; letter-spacing:.06em;
   text-transform:uppercase; color:#7C8393; margin-bottom:8px;
 }
-
-/* ---- Reasoning accordion ---- */
 .reasoning{
   border:1px solid #262A35; border-radius:14px; overflow:hidden;
   background:linear-gradient(180deg, rgba(28,31,39,.72), rgba(22,24,30,.55));
-  margin-bottom:14px;
-  transition:border-color .3s, box-shadow .3s;
+  margin-bottom:14px; transition:border-color .3s, box-shadow .3s;
 }
 .reasoning[data-open="true"]{
   border-color:rgba(0,242,254,.3);
@@ -682,8 +554,7 @@ input,textarea,select{ font-family:inherit; }
   content:''; position:absolute; inset:3px; border-radius:99px; background:var(--surface);
 }
 .reasoning[data-done="true"] .reason-orb{
-  animation:none;
-  background:linear-gradient(135deg,#00F2FE,#00FFC6);
+  animation:none; background:linear-gradient(135deg,#00F2FE,#00FFC6);
 }
 .reasoning[data-done="true"] .reason-orb::after{ display:none; }
 @keyframes spin{ to{ transform:rotate(360deg) } }
@@ -700,12 +571,10 @@ input,textarea,select{ font-family:inherit; }
 .reason-steps{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:7px; }
 .reason-steps li{
   display:flex; align-items:center; gap:9px;
-  font-size:12.4px; color:#8A91A0;
-  animation:stepIn .35s ease both;
+  font-size:12.4px; color:#8A91A0; animation:stepIn .35s ease both;
 }
 @keyframes stepIn{
-  from{ opacity:0; transform:translateX(-6px); }
-  to  { opacity:1; transform:none; }
+  from{ opacity:0; transform:translateX(-6px); } to{ opacity:1; transform:none; }
 }
 .step-dot{
   width:6px; height:6px; border-radius:99px; background:#3A3F4D; flex:0 0 auto;
@@ -717,7 +586,6 @@ input,textarea,select{ font-family:inherit; }
 }
 .reason-steps li.done{ color:#A9B0BF; }
 
-/* ---- Markdown prose ---- */
 .prose{ font-size:14.8px; line-height:1.78; color:#E7E9EE; word-break:break-word; }
 .prose > *:first-child{ margin-top:0 !important; }
 .prose > *:last-child{ margin-bottom:0 !important; }
@@ -738,14 +606,14 @@ input,textarea,select{ font-family:inherit; }
 .prose ol li::marker{ color:var(--blue); font-weight:600; }
 .prose blockquote{
   margin:14px 0; padding:10px 16px;
-  border-left:3px solid var(--cyan);
-  background:rgba(0,242,254,.05);
+  border-left:3px solid var(--cyan); background:rgba(0,242,254,.05);
   border-radius:0 10px 10px 0; color:#C3C9D4;
 }
 .prose hr{ border:none; border-top:1px solid var(--line); margin:22px 0; }
 .prose table{
-  width:100%; border-collapse:collapse; margin:14px 0; font-size:13.5px;
-  border:1px solid var(--line); border-radius:12px; overflow:hidden;
+  width:100%; border-collapse:collapse; margin:14px 0;
+  font-size:13.5px; border:1px solid var(--line);
+  border-radius:12px; overflow:hidden;
 }
 .prose th{
   background:var(--surface-2); padding:9px 12px; text-align:left;
@@ -759,8 +627,6 @@ input,textarea,select{ font-family:inherit; }
   padding:2px 6px; border-radius:6px;
   border:1px solid rgba(0,242,254,.16);
 }
-
-/* ---- Code blocks ---- */
 .code-block{
   margin:15px 0; border-radius:13px; overflow:hidden;
   border:1px solid #262A35; background:#0F1117;
@@ -783,17 +649,15 @@ input,textarea,select{ font-family:inherit; }
 }
 .copy-btn:hover{ background:#22262F; color:var(--crystal); border-color:#3A3F4D; }
 .copy-btn.copied{
-  color:var(--cyan); border-color:rgba(0,242,254,.45);
-  background:rgba(0,242,254,.09);
+  color:var(--cyan); border-color:rgba(0,242,254,.45); background:rgba(0,242,254,.09);
 }
 .code-block pre{ margin:0; padding:14px 16px; overflow-x:auto; background:#0F1117 !important; }
 .code-block pre code{
   font-family:'JetBrains Mono',monospace; font-size:12.9px; line-height:1.68;
-  background:transparent !important; padding:0 !important; border:none !important;
-  color:#E7E9EE;
+  background:transparent !important; padding:0 !important;
+  border:none !important; color:#E7E9EE;
 }
 .hljs{ background:transparent !important; }
-
 .cursor-blink{
   display:inline-block; width:8px; height:16px; vertical-align:-2px;
   background:linear-gradient(180deg,#00F2FE,#00FFC6);
@@ -802,7 +666,6 @@ input,textarea,select{ font-family:inherit; }
 }
 @keyframes blinkCursor{ 0%,100%{opacity:1} 50%{opacity:0} }
 
-/* ---- Composer ---- */
 #composerWrap{
   flex:0 0 auto; padding:8px 20px 14px;
   background:linear-gradient(180deg, rgba(13,14,18,0), rgba(13,14,18,.92) 42%);
@@ -831,8 +694,8 @@ input,textarea,select{ font-family:inherit; }
 .composer-row{ display:flex; align-items:center; gap:6px; margin-top:4px; }
 .tool-btn{
   display:grid; place-items:center; width:34px; height:34px; border-radius:10px;
-  background:transparent; border:1px solid transparent; color:#8A91A0; cursor:pointer;
-  transition:all .2s ease;
+  background:transparent; border:1px solid transparent;
+  color:#8A91A0; cursor:pointer; transition:all .2s ease;
 }
 .tool-btn:hover{ background:#1E222B; color:var(--crystal); border-color:var(--line); }
 .send-btn{
@@ -847,8 +710,7 @@ input,textarea,select{ font-family:inherit; }
 .stop-btn{
   display:grid; place-items:center; width:36px; height:36px; border-radius:11px;
   border:1px solid rgba(255,107,129,.4); cursor:pointer; color:var(--danger);
-  background:rgba(255,107,129,.12);
-  transition:all .2s ease;
+  background:rgba(255,107,129,.12); transition:all .2s ease;
 }
 .stop-btn:hover{ background:rgba(255,107,129,.22); }
 .disclaimer{
@@ -862,21 +724,18 @@ input,textarea,select{ font-family:inherit; }
   font-size:11.6px; color:#B7BDC9; max-width:100%;
 }
 .attach-chip button{
-  background:none; border:none; color:var(--dim); cursor:pointer;
-  padding:0; display:grid; place-items:center;
+  background:none; border:none; color:var(--dim);
+  cursor:pointer; padding:0; display:grid; place-items:center;
 }
 .attach-chip button:hover{ color:var(--danger); }
 
-/* ---- Welcome ---- */
 .welcome{ padding:34px 6px 10px; animation:fadeUp .6s ease both; }
 .welcome-orb{
   width:88px; height:88px; border-radius:26px;
   display:grid; place-items:center; margin-bottom:22px;
   position:relative;
   background:radial-gradient(circle at center, rgba(0,242,254,.22) 0%, rgba(0,255,198,.08) 52%, transparent 82%);
-  box-shadow:
-    0 0 60px -12px rgba(0,242,254,.55),
-    inset 0 0 40px -12px rgba(0,255,198,.3);
+  box-shadow:0 0 60px -12px rgba(0,242,254,.55), inset 0 0 40px -12px rgba(0,255,198,.3);
 }
 .welcome-orb .anu-logo{ width:88px; height:88px; }
 .sugg{
@@ -885,15 +744,13 @@ input,textarea,select{ font-family:inherit; }
   transition:all .22s ease; font-family:inherit; color:#D6DAE3;
 }
 .sugg:hover{
-  border-color:rgba(0,242,254,.4);
-  background:rgba(28,31,39,.95);
+  border-color:rgba(0,242,254,.4); background:rgba(28,31,39,.95);
   transform:translateY(-2px);
   box-shadow:0 18px 40px -22px rgba(0,242,254,.8);
 }
 .sugg .st{ font-size:13.2px; font-weight:600; color:var(--crystal); margin-bottom:3px; }
 .sugg .sd{ font-size:11.8px; color:#7C8393; line-height:1.5; }
 
-/* ---- Modals ---- */
 .modal-backdrop{
   position:fixed; inset:0; z-index:500;
   background:rgba(6,7,10,.78);
@@ -914,15 +771,11 @@ input,textarea,select{ font-family:inherit; }
   position:sticky; top:0; background:rgba(28,31,39,.98);
   backdrop-filter:blur(20px); border-radius:24px 24px 0 0; z-index:2;
 }
-.modal-title{
-  font-size:16px; font-weight:700; color:var(--crystal);
-  letter-spacing:-.01em;
-}
+.modal-title{ font-size:16px; font-weight:700; color:var(--crystal); letter-spacing:-.01em; }
 .modal-body{ padding:20px 22px 24px; }
 .settings-label{
-  font-size:11px; font-weight:700; letter-spacing:.12em;
-  text-transform:uppercase; color:#7C8393;
-  margin-bottom:8px; display:block;
+  font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+  color:#7C8393; margin-bottom:8px; display:block;
 }
 .lock-badge{
   display:inline-flex; align-items:center; gap:6px;
@@ -934,13 +787,11 @@ input,textarea,select{ font-family:inherit; }
 .settings-row{
   display:flex; align-items:center; justify-content:space-between;
   gap:12px; padding:12px 14px; border-radius:12px;
-  background:#1A1D25; border:1px solid #262A35;
-  margin-bottom:8px;
+  background:#1A1D25; border:1px solid #262A35; margin-bottom:8px;
 }
 .settings-row__meta{ min-width:0; flex:1; }
 .settings-row__label{ font-size:13.2px; font-weight:600; color:var(--crystal); }
 .settings-row__desc{ font-size:11.4px; color:#7C8393; margin-top:2px; }
-
 .toggle{
   position:relative; width:40px; height:22px; border-radius:99px;
   background:#2A2D37; border:none; cursor:pointer; flex:0 0 auto;
@@ -951,32 +802,23 @@ input,textarea,select{ font-family:inherit; }
   width:16px; height:16px; border-radius:99px;
   background:#7C8393; transition:all .25s cubic-bezier(.4,0,.2,1);
 }
-.toggle.on{
-  background:linear-gradient(135deg,#00F2FE,#00FFC6);
-}
-.toggle.on::after{
-  left:21px; background:#04121A;
-}
-
+.toggle.on{ background:linear-gradient(135deg,#00F2FE,#00FFC6); }
+.toggle.on::after{ left:21px; background:#04121A; }
 .slider{
   -webkit-appearance:none; appearance:none;
-  width:100%; height:4px; border-radius:99px;
-  background:#2A2D37; outline:none;
+  width:100%; height:4px; border-radius:99px; background:#2A2D37; outline:none;
 }
 .slider::-webkit-slider-thumb{
   -webkit-appearance:none; appearance:none;
   width:16px; height:16px; border-radius:99px;
   background:linear-gradient(135deg,#00F2FE,#00FFC6);
-  cursor:pointer;
-  box-shadow:0 0 12px rgba(0,242,254,.7);
+  cursor:pointer; box-shadow:0 0 12px rgba(0,242,254,.7);
 }
 .slider::-moz-range-thumb{
   width:16px; height:16px; border-radius:99px;
   background:linear-gradient(135deg,#00F2FE,#00FFC6);
-  cursor:pointer; border:none;
-  box-shadow:0 0 12px rgba(0,242,254,.7);
+  cursor:pointer; border:none; box-shadow:0 0 12px rgba(0,242,254,.7);
 }
-
 .toast{
   position:fixed; bottom:26px; left:50%;
   transform:translateX(-50%) translateY(20px);
@@ -990,29 +832,21 @@ input,textarea,select{ font-family:inherit; }
 }
 .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 .toast.err{ border-color:rgba(255,107,129,.45); }
-
 .spin-sm{
-  display:inline-block;
-  width:15px; height:15px; border-radius:99px;
+  display:inline-block; width:15px; height:15px; border-radius:99px;
   border:2px solid rgba(4,18,26,.35); border-top-color:#04121A;
   animation:spin .7s linear infinite;
 }
 
-/* ============================================================
-   REDUCED MOTION
-   ============================================================ */
 @media (prefers-reduced-motion: reduce){
   *, *::before, *::after{
-    animation-duration:.001ms !important;
-    animation-iteration-count:1 !important;
+    animation-duration:.001ms !important; animation-iteration-count:1 !important;
     transition-duration:.001ms !important;
   }
   .splash__glow, .anu-logo .eye-pulse, .anu-logo .eye-blink,
   .anu-logo .eye-iris, .anu-logo .iris-halo, .anu-logo .iris-dot,
   .anu-logo .logo-shimmer path{ animation:none !important; }
 }
-
-/* Responsive */
 @media (max-width:520px){
   .auth-card{ padding:26px 20px 22px; border-radius:22px; }
   .auth-brand__name{ font-size:22px; }
@@ -1030,61 +864,50 @@ input,textarea,select{ font-family:inherit; }
 
 <div id="bgGlow"></div>
 
-<!-- ==========================================================
-     SPLASH SCREEN
-     ========================================================== -->
+<!-- SPLASH -->
 <div id="splash" role="status" aria-label="Anu AI loading">
   <div class="splash__glow"></div>
-
   <div class="splash__logo">
     <svg class="anu-logo" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Anu AI logo">
       <defs>
         <linearGradient id="anuGrad" x1="0%" y1="100%" x2="100%" y2="0%">
-          <stop offset="0%"   stop-color="#00F2FE"/>
-          <stop offset="50%"  stop-color="#33F8E2"/>
+          <stop offset="0%" stop-color="#00F2FE"/>
+          <stop offset="50%" stop-color="#33F8E2"/>
           <stop offset="100%" stop-color="#00FFC6"/>
         </linearGradient>
         <linearGradient id="anuGradSoft" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%"   stop-color="#00F2FE"/>
+          <stop offset="0%" stop-color="#00F2FE"/>
           <stop offset="100%" stop-color="#00FFC6"/>
         </linearGradient>
-        <clipPath id="eyeClip">
-          <path d="M100 71 L115 85 L100 99 L85 85 Z"/>
-        </clipPath>
+        <clipPath id="eyeClip"><path d="M100 71 L115 85 L100 99 L85 85 Z"/></clipPath>
       </defs>
-
       <g class="logo-lines">
-        <path class="line"              d="M100 34 L46 168"/>
-        <path class="line"              d="M100 34 L154 168"/>
-        <path class="line line--bar"    d="M68 130 L132 130"/>
+        <path class="line" d="M100 34 L46 168"/>
+        <path class="line" d="M100 34 L154 168"/>
+        <path class="line line--bar" d="M68 130 L132 130"/>
       </g>
-
       <g class="logo-shimmer">
         <path pathLength="100" d="M100 34 L46 168"/>
         <path pathLength="100" d="M100 34 L154 168"/>
         <path pathLength="100" d="M68 130 L132 130"/>
       </g>
-
       <g class="eye-pulse">
         <g class="eye-blink">
           <path class="eye-diamond" d="M100 71 L115 85 L100 99 L85 85 Z"/>
           <g class="eye-iris">
             <circle class="iris-halo" cx="100" cy="85" r="11" clip-path="url(#eyeClip)"/>
             <circle class="iris-ring" cx="100" cy="85" r="6.5"/>
-            <circle class="iris-dot"  cx="100" cy="85" r="3"/>
+            <circle class="iris-dot" cx="100" cy="85" r="3"/>
           </g>
         </g>
       </g>
     </svg>
   </div>
-
   <div class="splash__word">Anu&nbsp;AI</div>
   <div class="splash__sub">Neural Intelligence Platform</div>
 </div>
 
-<!-- ==========================================================
-     AUTH SCREEN
-     ========================================================== -->
+<!-- AUTH -->
 <div id="authScreen" class="hidden">
   <div class="auth-card">
     <div class="auth-brand">
@@ -1092,12 +915,12 @@ input,textarea,select{ font-family:inherit; }
         <svg class="anu-logo compact" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
           <defs>
             <linearGradient id="anuGradA" x1="0%" y1="100%" x2="100%" y2="0%">
-              <stop offset="0%"   stop-color="#00F2FE"/>
-              <stop offset="50%"  stop-color="#33F8E2"/>
+              <stop offset="0%" stop-color="#00F2FE"/>
+              <stop offset="50%" stop-color="#33F8E2"/>
               <stop offset="100%" stop-color="#00FFC6"/>
             </linearGradient>
             <linearGradient id="anuGradSoftA" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%"   stop-color="#00F2FE"/>
+              <stop offset="0%" stop-color="#00F2FE"/>
               <stop offset="100%" stop-color="#00FFC6"/>
             </linearGradient>
             <clipPath id="eyeClipA"><path d="M100 71 L115 85 L100 99 L85 85 Z"/></clipPath>
@@ -1113,7 +936,7 @@ input,textarea,select{ font-family:inherit; }
               <g class="eye-iris">
                 <circle class="iris-halo" cx="100" cy="85" r="11" clip-path="url(#eyeClipA)"/>
                 <circle class="iris-ring" cx="100" cy="85" r="6.5"/>
-                <circle class="iris-dot"  cx="100" cy="85" r="3"/>
+                <circle class="iris-dot" cx="100" cy="85" r="3"/>
               </g>
             </g>
           </g>
@@ -1159,14 +982,9 @@ input,textarea,select{ font-family:inherit; }
   </div>
 </div>
 
-<!-- ==========================================================
-     MAIN APP
-     ========================================================== -->
+<!-- APP -->
 <div id="app" class="hidden">
-
   <div id="sidebarOverlay"></div>
-
-  <!-- Sidebar -->
   <aside id="sidebar">
     <div class="side-brand">
       <div class="side-brand__logo">
@@ -1190,7 +1008,7 @@ input,textarea,select{ font-family:inherit; }
             <g class="eye-blink">
               <path class="eye-diamond" d="M100 71 L115 85 L100 99 L85 85 Z" stroke="url(#anuGradSoftB)"/>
               <circle class="iris-ring" cx="100" cy="85" r="6.5"/>
-              <circle class="iris-dot"  cx="100" cy="85" r="3"/>
+              <circle class="iris-dot" cx="100" cy="85" r="3"/>
             </g>
           </g>
         </svg>
@@ -1226,14 +1044,11 @@ input,textarea,select{ font-family:inherit; }
     </button>
   </aside>
 
-  <!-- Main -->
   <div id="main" style="flex:1;display:flex;flex-direction:column;min-width:0;position:relative;">
-
     <header id="mainHeader">
       <button class="icon-btn" id="menuBtn" title="Toggle sidebar">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
       </button>
-
       <div style="position:relative;">
         <button class="model-btn" id="modelBtn" type="button">
           <span class="model-dot"></span>
@@ -1242,17 +1057,13 @@ input,textarea,select{ font-family:inherit; }
         </button>
         <div class="dropdown hidden" id="modelDropdown"></div>
       </div>
-
       <div style="flex:1;"></div>
-
       <button class="icon-btn" id="settingsBtn" title="Settings">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
     </header>
 
-    <div id="chatScroll">
-      <div id="messages"></div>
-    </div>
+    <div id="chatScroll"><div id="messages"></div></div>
 
     <div id="composerWrap">
       <div id="composer">
@@ -1280,9 +1091,7 @@ input,textarea,select{ font-family:inherit; }
   </div>
 </div>
 
-<!-- ==========================================================
-     SETTINGS MODAL
-     ========================================================== -->
+<!-- SETTINGS -->
 <div class="modal-backdrop hidden" id="settingsModal">
   <div class="modal-panel">
     <div class="modal-head">
@@ -1292,7 +1101,6 @@ input,textarea,select{ font-family:inherit; }
       </button>
     </div>
     <div class="modal-body">
-
       <div style="display:flex;align-items:center;gap:14px;padding:14px;border-radius:16px;background:#1A1D25;border:1px solid #262A35;margin-bottom:24px;">
         <div class="avatar" id="settingsAvatar" style="width:48px;height:48px;border-radius:15px;font-size:19px;">U</div>
         <div style="min-width:0;">
@@ -1377,9 +1185,7 @@ input,textarea,select{ font-family:inherit; }
   </div>
 </div>
 
-<!-- ==========================================================
-     CONFIRM MODAL
-     ========================================================== -->
+<!-- CONFIRM -->
 <div class="modal-backdrop hidden" id="confirmModal">
   <div class="modal-panel" style="max-width:410px;">
     <div class="modal-body" style="padding:26px 24px 22px;">
@@ -1401,43 +1207,25 @@ input,textarea,select{ font-family:inherit; }
 <script>
 /* ============================================================
    ANU AI — NEURAL INTELLIGENCE PLATFORM
-   Full application runtime — keys are secured on the backend
+   Full runtime · Firebase Auth + Firestore + Secure local fallback
    ============================================================ */
 'use strict';
 
-/* ---------------- CONFIG ----------------
-   The Groq API key now lives on the Vercel serverless function
-   (see api/chat.js). This frontend only talks to /api/chat. */
+/* ---------------- CONFIG ---------------- */
 const API_ENDPOINT = "/api/chat";
 
-/* Anu engine aliases — real backend models are hidden from the UI */
 const ENGINES = [
-  {
-    id: "llama-3.1-8b-instant",
-    name: "Anu Fast",
-    desc: "Instant responses · everyday tasks",
-    short: "Fast",
-    steps: ["Parsing input tokens...", "Running lightweight inference...", "Delivering response..."]
-  },
-  {
-    id: "qwen/qwen3-32b",
-    name: "Anu Thinking",
-    desc: "Balanced reasoning · structured thinking",
-    short: "Thinking",
-    steps: ["Understanding intent...", "Weighing context signals...", "Structuring a clear answer...", "Polishing output..."]
-  },
-  {
-    id: "openai/gpt-oss-120b",
-    name: "Anu Master Thinking",
-    desc: "Deep reasoning · flagship intelligence",
-    short: "Master",
-    steps: ["Decomposing the problem...", "Retrieving relevant knowledge...", "Cross-checking multiple hypotheses...", "Validating logical consistency...", "Synthesizing final answer..."]
-  }
+  { id: "llama-3.1-8b-instant", name: "Anu Fast",
+    desc: "Instant responses · everyday tasks", short: "Fast",
+    steps: ["Parsing input tokens...", "Running lightweight inference...", "Delivering response..."] },
+  { id: "qwen/qwen3-32b", name: "Anu Thinking",
+    desc: "Balanced reasoning · structured thinking", short: "Thinking",
+    steps: ["Understanding intent...", "Weighing context signals...", "Structuring a clear answer...", "Polishing output..."] },
+  { id: "openai/gpt-oss-120b", name: "Anu Master Thinking",
+    desc: "Deep reasoning · flagship intelligence", short: "Master",
+    steps: ["Decomposing the problem...", "Retrieving relevant knowledge...", "Cross-checking multiple hypotheses...", "Validating logical consistency...", "Synthesizing final answer..."] }
 ];
 
-/* ============================================================
-   ANU IDENTITY DIRECTIVE (IMMUTABLE)
-   ============================================================ */
 const ANU_SYSTEM_DIRECTIVE = {
   role: "system",
   content: [
@@ -1468,28 +1256,20 @@ const firebaseConfig = {
   appId: "1:604169434635:web:ee0842670514647051790e"
 };
 
-/* ---------------- GLOBAL STATE ---------------- */
+/* ---------------- STATE ---------------- */
 const state = {
-  user: null,
-  chats: [],
-  currentChatId: null,
-  streaming: false,
-  abortController: null,
-  systemPrompt: "",
-  preferredEngine: 1,
-  attachments: [],
-  firebaseReady: false,
-  localMode: false,
-  settings: {
-    responseLength: 4096,
-    temperature: 70,
-    streaming: true,
-    showReasoning: true,
-    sound: false
-  }
+  user: null, chats: [], currentChatId: null,
+  streaming: false, abortController: null,
+  systemPrompt: "", preferredEngine: 1,
+  attachments: [], firebaseReady: false, firestoreReady: false,
+  localMode: false, firestoreLoaded: false,
+  settings: { responseLength: 4096, temperature: 70, streaming: true, showReasoning: true, sound: false }
 };
 
-/* ---------------- DOM ---------------- */
+let db = null;
+let firestoreSaveTimer = null;
+let firestoreSuspended = false;
+
 const $ = (id) => document.getElementById(id);
 const scroller = $("chatScroll");
 const messagesEl = $("messages");
@@ -1499,30 +1279,59 @@ const inputEl = $("input");
    UTILITIES
    ============================================================ */
 function uid() { return "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
-
 function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
-
 let toastTimer = null;
 function toast(msg, isError) {
   const el = $("toast");
   el.textContent = msg;
   el.className = "toast show" + (isError ? " err" : "");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    el.className = "toast" + (isError ? " err" : "");
-  }, 2800);
+  toastTimer = setTimeout(() => { el.className = "toast" + (isError ? " err" : ""); }, 2800);
 }
-
 function storageKey(suffix) {
   const id = state.user ? state.user.uid : "anon";
   return "anu_" + suffix + "_" + id;
+}
+function isCloudUser() {
+  return !!(db && state.user && state.user.uid &&
+    !state.user.uid.startsWith("guest_") &&
+    !state.user.uid.startsWith("local_"));
+}
+
+/* ============================================================
+   SECURE PASSWORD HASHING (for local fallback only)
+   Web Crypto PBKDF2-SHA256 · 100,000 iterations · 16-byte salt
+   Passwords are NEVER stored in plaintext.
+   ============================================================ */
+async function hashPassword(password, saltHex) {
+  const enc = new TextEncoder();
+  const salt = saltHex ? hexToBytes(saltHex) : crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveBits"]
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+    keyMaterial, 256
+  );
+  return {
+    hash: bytesToHex(new Uint8Array(bits)),
+    salt: bytesToHex(salt)
+  };
+}
+function bytesToHex(bytes) {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+function hexToBytes(hex) {
+  const arr = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < arr.length; i++) arr[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return arr;
+}
+async function verifyPassword(password, storedHash, storedSalt) {
+  const { hash } = await hashPassword(password, storedSalt);
+  return hash === storedHash;
 }
 
 /* ============================================================
@@ -1532,34 +1341,26 @@ const ICON_COPY = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" s
 const ICON_CHECK = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
 
 function decorateCodeBlocks(root) {
-  const pres = root.querySelectorAll("pre");
-  pres.forEach((pre) => {
+  root.querySelectorAll("pre").forEach((pre) => {
     if (pre.dataset.decorated === "1") return;
     pre.dataset.decorated = "1";
     const code = pre.querySelector("code");
     if (!code) return;
     try { hljs.highlightElement(code); } catch (e) {}
-
     let lang = "code";
-    const cls = code.className || "";
-    const m = cls.match(/language-([\w+#-]+)/i);
+    const m = (code.className || "").match(/language-([\w+#-]+)/i);
     if (m && m[1]) lang = m[1];
-
     const wrapper = document.createElement("div");
     wrapper.className = "code-block";
-
     const bar = document.createElement("div");
     bar.className = "code-bar";
-
     const langSpan = document.createElement("span");
     langSpan.className = "code-lang";
     langSpan.textContent = lang;
-
     const btn = document.createElement("button");
     btn.className = "copy-btn";
     btn.type = "button";
     btn.innerHTML = ICON_COPY + "<span>Copy</span>";
-
     btn.addEventListener("click", () => {
       const text = code.innerText;
       const done = () => {
@@ -1572,33 +1373,22 @@ function decorateCodeBlocks(root) {
       };
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
-      } else {
-        fallbackCopy(text, done);
-      }
+      } else fallbackCopy(text, done);
     });
-
-    bar.appendChild(langSpan);
-    bar.appendChild(btn);
+    bar.appendChild(langSpan); bar.appendChild(btn);
     pre.parentNode.insertBefore(wrapper, pre);
     wrapper.appendChild(bar);
     wrapper.appendChild(pre);
   });
 }
-
 function fallbackCopy(text, cb) {
   try {
     const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    document.body.removeChild(ta);
-    cb();
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); document.body.removeChild(ta); cb();
   } catch (e) {}
 }
-
 function sanitizeNode(root) {
   root.querySelectorAll("script").forEach((s) => s.remove());
   root.querySelectorAll("*").forEach((el) => {
@@ -1607,21 +1397,17 @@ function sanitizeNode(root) {
     });
   });
 }
-
 function renderMarkdownInto(el, text) {
   let html = "";
-  try {
-    html = marked.parse(text, { breaks: true, gfm: true, headerIds: false, mangle: false });
-  } catch (e) {
-    html = "<p>" + escapeHtml(text) + "</p>";
-  }
+  try { html = marked.parse(text, { breaks: true, gfm: true, headerIds: false, mangle: false }); }
+  catch (e) { html = "<p>" + escapeHtml(text) + "</p>"; }
   el.innerHTML = html;
   sanitizeNode(el);
   decorateCodeBlocks(el);
 }
 
 /* ============================================================
-   FIREBASE
+   FIREBASE + FIRESTORE
    ============================================================ */
 function initFirebase() {
   try {
@@ -1630,14 +1416,80 @@ function initFirebase() {
     }
     if (!firebase.apps || !firebase.apps.length) firebase.initializeApp(firebaseConfig);
     state.firebaseReady = true;
+    try {
+      if (firebase.firestore) {
+        db = firebase.firestore();
+        state.firestoreReady = true;
+        console.log("[Anu] Firestore ready");
+      }
+    } catch (fsErr) {
+      db = null; state.firestoreReady = false;
+      console.warn("[Anu] Firestore unavailable:", fsErr);
+    }
   } catch (e) {
     state.firebaseReady = false;
     console.warn("[Anu] Firebase init failed:", e);
   }
 }
 
+async function loadFromFirestore() {
+  if (!isCloudUser()) return false;
+  try {
+    const docRef = db.collection("users").doc(state.user.uid);
+    const snap = await docRef.get();
+    if (!snap.exists) {
+      // First cloud login — migrate local cache if present
+      const existingLocal = localStorage.getItem("anu_chats_" + state.user.uid);
+      if (existingLocal) {
+        try { state.chats = JSON.parse(existingLocal) || []; } catch (e) {}
+      }
+      await pushToFirestore();
+      return true;
+    }
+    const data = snap.data() || {};
+    state.chats = Array.isArray(data.chats) ? data.chats : [];
+    state.systemPrompt = typeof data.systemPrompt === "string" ? data.systemPrompt : "";
+    state.preferredEngine = (typeof data.preferredEngine === "number" &&
+      data.preferredEngine >= 0 && data.preferredEngine < ENGINES.length) ? data.preferredEngine : 1;
+    if (data.settings && typeof data.settings === "object") {
+      Object.assign(state.settings, data.settings);
+    }
+    try { localStorage.setItem("anu_chats_" + state.user.uid, JSON.stringify(state.chats)); } catch (e) {}
+    console.log("[Anu] Loaded from Firestore:", state.chats.length, "chats");
+    return true;
+  } catch (err) {
+    console.warn("[Anu] Firestore load failed:", err);
+    return false;
+  }
+}
+
+async function pushToFirestore() {
+  if (!isCloudUser() || firestoreSuspended) return;
+  try {
+    const payload = {
+      chats: state.chats,
+      systemPrompt: state.systemPrompt || "",
+      preferredEngine: state.preferredEngine,
+      settings: state.settings,
+      email: state.user.email || "",
+      name: state.user.name || "",
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    await db.collection("users").doc(state.user.uid).set(payload, { merge: true });
+    console.log("[Anu] Saved to Firestore");
+  } catch (err) {
+    console.warn("[Anu] Firestore save failed:", err);
+  }
+}
+
+function scheduleFirestoreSync() {
+  if (!isCloudUser() || firestoreSuspended) return;
+  clearTimeout(firestoreSaveTimer);
+  firestoreSaveTimer = setTimeout(() => { pushToFirestore(); }, 900);
+}
+
 /* ============================================================
-   AUTH FLOW
+   AUTH
    ============================================================ */
 let authMode = "signin";
 
@@ -1651,7 +1503,6 @@ function setAuthMode(mode) {
   $("authPass").setAttribute("autocomplete", isSignUp ? "new-password" : "current-password");
   hideAuthError();
 }
-
 function showAuthError(msg) {
   const el = $("authErr");
   el.textContent = msg;
@@ -1664,6 +1515,7 @@ function hideAuthError() {
 }
 function setAuthLoading(loading) {
   const btn = $("authSubmit");
+  if (!btn) return;
   if (loading) {
     btn.disabled = true;
     btn.innerHTML = '<span class="spin-sm"></span>';
@@ -1672,22 +1524,38 @@ function setAuthLoading(loading) {
     btn.textContent = authMode === "signup" ? "Create Account" : "Sign In";
   }
 }
+function resetAuthForm() {
+  authMode = "signin";
+  ["authName", "authEmail", "authPass"].forEach((id) => {
+    const el = $(id);
+    if (el) el.value = "";
+  });
+  setAuthMode("signin");
+  hideAuthError();
+  setAuthLoading(false);
+}
 
 function initAuth() {
   if (state.firebaseReady) {
     firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL)
       .catch(() => {})
       .then(() => {
-        firebase.auth().onAuthStateChanged((user) => {
+        firebase.auth().onAuthStateChanged(async (user) => {
           if (user) {
             state.user = {
               uid: user.uid,
               name: user.displayName || (user.email ? user.email.split("@")[0] : "User"),
               email: user.email || "—"
             };
-            enterApp();
+            await enterApp();
           } else {
             state.user = null;
+            state.chats = [];
+            state.currentChatId = null;
+            state.firestoreLoaded = false;
+            if (messagesEl) messagesEl.innerHTML = "";
+            if ($("historyList")) $("historyList").innerHTML = "";
+            resetAuthForm();
             showAuthScreen();
           }
         });
@@ -1696,8 +1564,13 @@ function initAuth() {
     state.localMode = true;
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem("anu_local_session") || "null"); } catch (e) { saved = null; }
-    if (saved && saved.uid) { state.user = saved; enterApp(); }
-    else showAuthScreen();
+    if (saved && saved.uid) {
+      state.user = saved;
+      enterApp();
+    } else {
+      resetAuthForm();
+      showAuthScreen();
+    }
   }
 }
 
@@ -1706,10 +1579,28 @@ function showAuthScreen() {
   $("authScreen").classList.remove("hidden");
 }
 
-function enterApp() {
+async function enterApp() {
   $("authScreen").classList.add("hidden");
   $("app").classList.remove("hidden");
-  loadUserData();
+
+  // 1. Instant render from localStorage
+  loadFromLocalStorage();
+
+  // 2. Async cloud sync
+  if (isCloudUser()) {
+    firestoreSuspended = true;
+    try {
+      const loaded = await loadFromFirestore();
+      if (loaded) state.currentChatId = state.chats.length ? state.chats[0].id : null;
+    } finally {
+      firestoreSuspended = false;
+      state.firestoreLoaded = true;
+    }
+  } else {
+    state.firestoreLoaded = true;
+  }
+
+  // 3. Render UI
   renderSidebar();
   renderMessages();
   updateProfileUI();
@@ -1724,13 +1615,17 @@ function enterApp() {
   $("streamingToggle").classList.toggle("on", state.settings.streaming);
   $("reasoningToggle").classList.toggle("on", state.settings.showReasoning);
   $("soundToggle").classList.toggle("on", state.settings.sound);
+
+  setAuthLoading(false);
+  hideAuthError();
 }
 
 async function handleAuthSubmit(e) {
   e.preventDefault();
   hideAuthError();
+
   const name = $("authName").value.trim();
-  const email = $("authEmail").value.trim();
+  const email = $("authEmail").value.trim().toLowerCase();
   const pass = $("authPass").value;
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -1742,6 +1637,7 @@ async function handleAuthSubmit(e) {
   if (authMode === "signup" && !name) {
     showAuthError("Please enter your full name."); return;
   }
+
   setAuthLoading(true);
 
   if (state.firebaseReady) {
@@ -1749,35 +1645,56 @@ async function handleAuthSubmit(e) {
       if (authMode === "signup") {
         const cred = await firebase.auth().createUserWithEmailAndPassword(email, pass);
         if (cred.user && name) await cred.user.updateProfile({ displayName: name }).catch(() => {});
+        await cred.user.sendEmailVerification().catch(() => {});
       } else {
         await firebase.auth().signInWithEmailAndPassword(email, pass);
       }
+      setAuthLoading(false);
     } catch (err) {
       setAuthLoading(false);
       showAuthError(friendlyAuthError(err));
     }
   } else {
-    setTimeout(() => {
-      setAuthLoading(false);
-      try {
-        const accounts = JSON.parse(localStorage.getItem("anu_local_accounts") || "{}");
-        if (authMode === "signup") {
-          if (accounts[email]) { showAuthError("An account with this email already exists."); return; }
-          accounts[email] = { name: name || email.split("@")[0], pass };
-          localStorage.setItem("anu_local_accounts", JSON.stringify(accounts));
-        } else {
-          const acc = accounts[email];
-          if (!acc) { showAuthError("No account found for this email."); return; }
-          if (acc.pass !== pass) { showAuthError("Incorrect password. Please try again."); return; }
+    // Local fallback with secure PBKDF2 hashing
+    try {
+      const accounts = JSON.parse(localStorage.getItem("anu_local_accounts") || "{}");
+      if (authMode === "signup") {
+        if (accounts[email]) {
+          setAuthLoading(false);
+          showAuthError("An account with this email already exists.");
+          return;
         }
-        const profile = { uid: "local_" + btoa(email).replace(/[^a-z0-9]/gi, ""), name: (accounts[email].name || email.split("@")[0]), email };
-        localStorage.setItem("anu_local_session", JSON.stringify(profile));
-        state.user = profile;
-        enterApp();
-      } catch (err) {
-        showAuthError("Unable to complete authentication. Please retry.");
+        const { hash, salt } = await hashPassword(pass);
+        accounts[email] = { name: name || email.split("@")[0], hash, salt, createdAt: Date.now() };
+        localStorage.setItem("anu_local_accounts", JSON.stringify(accounts));
+      } else {
+        const acc = accounts[email];
+        if (!acc) {
+          setAuthLoading(false);
+          showAuthError("No account found with this email. Please sign up first.");
+          return;
+        }
+        const ok = await verifyPassword(pass, acc.hash, acc.salt);
+        if (!ok) {
+          setAuthLoading(false);
+          showAuthError("Incorrect password. Please try again.");
+          return;
+        }
       }
-    }, 620);
+      const profile = {
+        uid: "local_" + btoa(email).replace(/[^a-z0-9]/gi, ""),
+        name: accounts[email].name || email.split("@")[0],
+        email: email
+      };
+      localStorage.setItem("anu_local_session", JSON.stringify(profile));
+      state.user = profile;
+      setAuthLoading(false);
+      enterApp();
+    } catch (err) {
+      console.error("Local auth error:", err);
+      setAuthLoading(false);
+      showAuthError("Unable to complete authentication. Please retry.");
+    }
   }
 }
 
@@ -1788,7 +1705,7 @@ function friendlyAuthError(err) {
     case "auth/user-disabled": return "This account has been disabled.";
     case "auth/user-not-found": return "No account found with those credentials.";
     case "auth/wrong-password": return "Incorrect password. Please try again.";
-    case "auth/invalid-credential": return "Invalid credentials. Please check and retry.";
+    case "auth/invalid-credential": return "Invalid email or password. Please try again.";
     case "auth/email-already-in-use": return "An account with this email already exists.";
     case "auth/weak-password": return "Password is too weak. Use at least 6 characters.";
     case "auth/too-many-requests": return "Too many attempts. Please wait and try again.";
@@ -1799,17 +1716,27 @@ function friendlyAuthError(err) {
 
 async function signOutUser() {
   closeSettings();
+  const wasCloud = isCloudUser();
+  if (wasCloud) { try { await pushToFirestore(); } catch (e) {} }
+
   if (state.firebaseReady) { try { await firebase.auth().signOut(); } catch (e) {} }
   else { localStorage.removeItem("anu_local_session"); }
-  state.user = null; state.chats = []; state.currentChatId = null;
-  messagesEl.innerHTML = ""; $("historyList").innerHTML = "";
+
+  state.user = null;
+  state.chats = [];
+  state.currentChatId = null;
+  state.firestoreLoaded = false;
+  messagesEl.innerHTML = "";
+  $("historyList").innerHTML = "";
+  resetAuthForm();
   showAuthScreen();
+  toast("Signed out");
 }
 
 /* ============================================================
-   USER DATA
+   USER DATA (localStorage cache layer)
    ============================================================ */
-function loadUserData() {
+function loadFromLocalStorage() {
   try {
     const rawChats = localStorage.getItem(storageKey("chats"));
     state.chats = rawChats ? JSON.parse(rawChats) : [];
@@ -1839,15 +1766,19 @@ function loadUserData() {
 
 function saveChats() {
   try { localStorage.setItem(storageKey("chats"), JSON.stringify(state.chats)); } catch (e) {}
+  scheduleFirestoreSync();
 }
 function saveSystemPrompt() {
   try { localStorage.setItem(storageKey("system"), state.systemPrompt); } catch (e) {}
+  scheduleFirestoreSync();
 }
 function savePreferredEngine() {
   try { localStorage.setItem(storageKey("engine"), String(state.preferredEngine)); } catch (e) {}
+  scheduleFirestoreSync();
 }
 function saveSettings() {
   try { localStorage.setItem(storageKey("settings"), JSON.stringify(state.settings)); } catch (e) {}
+  scheduleFirestoreSync();
 }
 
 /* ============================================================
@@ -1866,13 +1797,11 @@ function createChat() {
   saveChats(); renderSidebar(); renderMessages();
   return chat;
 }
-
 function deleteChat(id) {
   state.chats = state.chats.filter((c) => c.id !== id);
   if (state.currentChatId === id) state.currentChatId = state.chats.length ? state.chats[0].id : null;
   saveChats(); renderSidebar(); renderMessages();
 }
-
 function selectChat(id) {
   if (state.streaming) return;
   state.currentChatId = id;
@@ -1937,12 +1866,9 @@ function renderSidebar() {
 
       const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       icon.setAttribute("width", "14"); icon.setAttribute("height", "14");
-      icon.setAttribute("viewBox", "0 0 24 24");
-      icon.setAttribute("fill", "none");
-      icon.setAttribute("stroke", "currentColor");
-      icon.setAttribute("stroke-width", "1.9");
-      icon.setAttribute("stroke-linecap", "round");
-      icon.setAttribute("stroke-linejoin", "round");
+      icon.setAttribute("viewBox", "0 0 24 24"); icon.setAttribute("fill", "none");
+      icon.setAttribute("stroke", "currentColor"); icon.setAttribute("stroke-width", "1.9");
+      icon.setAttribute("stroke-linecap", "round"); icon.setAttribute("stroke-linejoin", "round");
       icon.style.flex = "0 0 auto";
       icon.innerHTML = '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>';
 
@@ -2008,7 +1934,6 @@ function anuLogoSVG(uidSuffix) {
 function renderWelcome() {
   const wrap = document.createElement("div");
   wrap.className = "welcome";
-
   const orb = document.createElement("div");
   orb.className = "welcome-orb";
   orb.innerHTML = anuLogoSVG("Welcome");
@@ -2048,9 +1973,8 @@ function renderMessages() {
   if (!chat || !chat.messages.length) { renderWelcome(); return; }
 
   chat.messages.forEach((m) => {
-    if (m.role === "user") {
-      messagesEl.appendChild(buildUserNode(m.content));
-    } else {
+    if (m.role === "user") messagesEl.appendChild(buildUserNode(m.content));
+    else {
       const node = buildAssistantNode();
       node.setThinkingDone();
       node.setContent(m.content);
@@ -2107,8 +2031,7 @@ function buildAssistantNode() {
   stepsList.className = "reason-steps";
   rBody.appendChild(stepsList);
 
-  reasoning.appendChild(head);
-  reasoning.appendChild(rBody);
+  reasoning.appendChild(head); reasoning.appendChild(rBody);
 
   head.addEventListener("click", () => {
     const open = reasoning.getAttribute("data-open") === "true";
@@ -2118,11 +2041,8 @@ function buildAssistantNode() {
   const content = document.createElement("div");
   content.className = "prose";
 
-  body.appendChild(name);
-  body.appendChild(reasoning);
-  body.appendChild(content);
-  wrap.appendChild(avatar);
-  wrap.appendChild(body);
+  body.appendChild(name); body.appendChild(reasoning); body.appendChild(content);
+  wrap.appendChild(avatar); wrap.appendChild(body);
 
   let stepIndex = 0;
   let stepTimer = null;
@@ -2134,8 +2054,7 @@ function buildAssistantNode() {
     dot.className = "step-dot";
     const span = document.createElement("span");
     span.textContent = label;
-    li.appendChild(dot);
-    li.appendChild(span);
+    li.appendChild(dot); li.appendChild(span);
     stepsList.appendChild(li);
     return li;
   }
@@ -2149,12 +2068,8 @@ function buildAssistantNode() {
       if (finished) return;
       const prev = stepsList.lastElementChild;
       if (prev) prev.classList.add("done");
-      if (stepIndex < steps.length) {
-        pushStep(steps[stepIndex]);
-        stepIndex++;
-      } else {
-        stepIndex = 0;
-      }
+      if (stepIndex < steps.length) { pushStep(steps[stepIndex]); stepIndex++; }
+      else stepIndex = 0;
     }, 780);
   }
 
@@ -2234,13 +2149,9 @@ async function streamCompletion(apiMessages, onDelta, signal) {
     const engine = ENGINES[order[i]];
     let received = false;
     try {
-      // NOTE: The Authorization header is intentionally absent —
-      // the Groq key lives securely on the serverless function.
       const res = await fetch(API_ENDPOINT, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: engine.id,
           messages: apiMessages,
@@ -2252,10 +2163,7 @@ async function streamCompletion(apiMessages, onDelta, signal) {
         signal
       });
 
-      if (!res.ok) {
-        lastError = new Error("Engine HTTP " + res.status);
-        continue;
-      }
+      if (!res.ok) { lastError = new Error("Engine HTTP " + res.status); continue; }
 
       if (!useStream || !res.body) {
         const data = await res.json();
@@ -2417,10 +2325,7 @@ function updateComposerState() {
     sendBtn.disabled = inputEl.value.trim().length === 0 && state.attachments.length === 0;
   }
 }
-function clearAttachments() {
-  state.attachments = [];
-  renderAttachments();
-}
+function clearAttachments() { state.attachments = []; renderAttachments(); }
 function renderAttachments() {
   const wrap = $("attachPreview");
   wrap.innerHTML = "";
@@ -2471,26 +2376,19 @@ function buildModelDropdown() {
     const btn = document.createElement("button");
     btn.className = "model-opt" + (idx === state.preferredEngine ? " active" : "");
     btn.type = "button";
-
     const dot = document.createElement("span");
     dot.style.cssText = "width:9px;height:9px;border-radius:99px;flex:0 0 auto;background:linear-gradient(135deg,#00F2FE,#00FFC6);box-shadow:0 0 10px rgba(0,242,254,.8);";
-
     const txtWrap = document.createElement("div");
     txtWrap.style.cssText = "flex:1;min-width:0;";
     const nm = document.createElement("div");
-    nm.className = "mname";
-    nm.textContent = engine.name;
+    nm.className = "mname"; nm.textContent = engine.name;
     const ds = document.createElement("div");
-    ds.className = "mdesc";
-    ds.textContent = engine.desc;
+    ds.className = "mdesc"; ds.textContent = engine.desc;
     txtWrap.appendChild(nm); txtWrap.appendChild(ds);
-
     const check = document.createElement("span");
     check.style.cssText = "color:#00F2FE;opacity:" + (idx === state.preferredEngine ? "1" : "0") + ";flex:0 0 auto;";
     check.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
-
     btn.appendChild(dot); btn.appendChild(txtWrap); btn.appendChild(check);
-
     btn.addEventListener("click", () => {
       state.preferredEngine = idx;
       savePreferredEngine();
@@ -2504,7 +2402,6 @@ function buildModelDropdown() {
     dd.appendChild(btn);
   });
 }
-
 function applyEngineLabel() {
   const engine = ENGINES[state.preferredEngine] || ENGINES[1];
   $("modelBtnLabel").textContent = engine.name;
@@ -2522,7 +2419,6 @@ function updateProfileUI() {
   $("settingsAvatar").textContent = initial;
   $("settingsName").textContent = state.user.name || "User";
   $("settingsEmail").textContent = state.user.email || "—";
-
   const sel = $("settingsEngineSelect");
   sel.innerHTML = "";
   ENGINES.forEach((engine, idx) => {
@@ -2534,7 +2430,6 @@ function updateProfileUI() {
   });
   sel.value = String(state.preferredEngine);
 }
-
 function openSettings() {
   $("systemPromptInput").value = state.systemPrompt || "";
   $("settingsEngineSelect").value = String(state.preferredEngine);
@@ -2567,11 +2462,11 @@ function closeMobileSidebar() {
    EVENTS
    ============================================================ */
 function wireEvents() {
-  /* Auth */
   $("tabSignIn").addEventListener("click", () => setAuthMode("signin"));
   $("tabSignUp").addEventListener("click", () => setAuthMode("signup"));
   $("authForm").addEventListener("submit", handleAuthSubmit);
-  $("guestBtn").addEventListener("click", () => {
+
+  $("guestBtn").addEventListener("click", async () => {
     state.user = {
       uid: "guest_" + Math.random().toString(36).slice(2, 10),
       name: "Guest",
@@ -2580,10 +2475,9 @@ function wireEvents() {
     if (!state.firebaseReady) {
       localStorage.setItem("anu_local_session", JSON.stringify(state.user));
     }
-    enterApp();
+    await enterApp();
   });
 
-  /* Sidebar */
   $("newChatBtn").addEventListener("click", () => {
     if (state.streaming) { toast("Please stop the current response first.", true); return; }
     createChat(); closeMobileSidebar(); inputEl.focus();
@@ -2598,7 +2492,6 @@ function wireEvents() {
   $("closeSidebarBtn").addEventListener("click", closeMobileSidebar);
   $("sidebarOverlay").addEventListener("click", closeMobileSidebar);
 
-  /* Model dropdown */
   $("modelBtn").addEventListener("click", (e) => {
     e.stopPropagation();
     $("modelDropdown").classList.toggle("hidden");
@@ -2610,7 +2503,6 @@ function wireEvents() {
     }
   });
 
-  /* Composer */
   inputEl.addEventListener("input", () => { autoGrow(); updateComposerState(); });
   inputEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -2628,7 +2520,6 @@ function wireEvents() {
     autoGrow(); updateComposerState(); inputEl.focus();
   });
 
-  /* Settings */
   $("profileBtn").addEventListener("click", openSettings);
   $("settingsBtn").addEventListener("click", openSettings);
   document.querySelectorAll("[data-close-settings]").forEach((b) => b.addEventListener("click", closeSettings));
@@ -2694,7 +2585,6 @@ function wireEvents() {
 
   $("signOutBtn").addEventListener("click", signOutUser);
 
-  /* Global keys */
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       $("modelDropdown").classList.add("hidden");
@@ -2704,7 +2594,6 @@ function wireEvents() {
     }
   });
 
-  /* Responsive */
   window.addEventListener("resize", () => {
     if (!isMobile()) {
       $("sidebar").classList.remove("mobile-open");
