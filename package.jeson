@@ -3,5 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Anu AI — Neural Intelligence Platform"
+  "description": "Anu AI — Neural Intelligence Platform",
+  "dependencies": {
+    "firebase": "^10.12.2"
+  }
 }
