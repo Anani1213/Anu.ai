@@ -1,7 +1,6 @@
 /* ============================================================
-   Anu AI — Telegram Business Bot
-   Auto-replies to messages on behalf of a Telegram Business account.
-   Uses the official Telegram Business API (no userbot hacks).
+   Anu AI — Telegram Business Bot (v2)
+   Improved error handling, timeout guard, detailed logging
    ============================================================ */
 
 export default async function handler(req, res) {
@@ -15,8 +14,11 @@ export default async function handler(req, res) {
   const BOT_TOKEN = process.env.BUSINESS_BOT_TOKEN;
   const GROQ_KEY = process.env.GROQ_API_KEY;
 
-  if (!BOT_TOKEN) {
-    console.error('BUSINESS_BOT_TOKEN missing');
+  if (!BOT_TOKEN || !GROQ_KEY) {
+    console.error('[Anu] Missing env vars:', {
+      hasToken: !!BOT_TOKEN,
+      hasGroq: !!GROQ_KEY
+    });
     return res.status(200).end();
   }
 
@@ -31,41 +33,82 @@ export default async function handler(req, res) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      return await r.json();
+      const data = await r.json();
+      if (!data.ok) {
+        console.error(`[Anu] ${method} FAILED:`, JSON.stringify(data));
+      } else {
+        console.log(`[Anu] ${method} OK`);
+      }
+      return data;
     } catch (err) {
-      console.error(method + ' failed:', err);
+      console.error(`${method} threw:`, err);
       return null;
     }
   }
 
-  /* ============================================================
-     Handle business messages
-     ============================================================ */
+  /* ==== Direct /start for verification ==== */
+  const directMsg = update.message;
+  if (directMsg && directMsg.text === '/start') {
+    await callAPI('sendMessage', {
+      chat_id: directMsg.chat.id,
+      text:
+        '✅ *Anu Business Bot is online!*\n\n' +
+        'This bot auto-replies to messages on behalf of your personal account.\n\n' +
+        '📋 *To activate:*\n' +
+        '1. Enable Business Mode in @BotFather\n' +
+        '2. Telegram → Settings → Business → Chatbots → Add this bot\n' +
+        '3. Enable "Reply to messages" permission\n' +
+        '4. Someone messages you → bot replies automatically',
+      parse_mode: 'Markdown'
+    });
+    return res.status(200).json({ ok: true });
+  }
+
+  /* ==== Business message ==== */
   const message = update.business_message || update.edited_business_message;
 
-  if (message && message.text) {
-    const businessConnectionId = message.business_connection_id;
-    const chatId = message.chat.id;
-    const userText = message.text.trim();
-    const senderName = message.from?.first_name || 'there';
+  if (!message || !message.text) {
+    console.log('[Anu] No business_message in update:', Object.keys(update));
+    return res.status(200).json({ ok: true });
+  }
 
-    console.log('[Anu Business] Message from', senderName, ':', userText.slice(0, 60));
+  const businessConnectionId = message.business_connection_id;
+  const chatId = message.chat.id;
+  const userText = message.text.trim();
+  const senderName = message.from?.first_name || 'there';
 
-    // Skip if this is a command
-    if (userText.startsWith('/')) {
-      return res.status(200).json({ ok: true });
-    }
+  console.log('[Anu] Business message received:');
+  console.log('  From:', senderName);
+  console.log('  Text:', userText.slice(0, 80));
+  console.log('  business_connection_id:', businessConnectionId);
+  console.log('  chat_id:', chatId);
 
+  if (!businessConnectionId) {
+    console.error('[Anu] MISSING business_connection_id — cannot reply!');
+    return res.status(200).json({ ok: true });
+  }
+
+  if (userText.startsWith('/')) {
+    return res.status(200).json({ ok: true });
+  }
+
+  try {
+    // Typing indicator
+    await callAPI('sendChatAction', {
+      chat_id: chatId,
+      action: 'typing',
+      business_connection_id: businessConnectionId
+    });
+
+    console.log('[Anu] Calling Groq...');
+
+    // Groq call with 8s timeout (Vercel Hobby plan = 10s)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    let groqRes;
     try {
-      // Show typing indicator
-      await callAPI('sendChatAction', {
-        chat_id: chatId,
-        action: 'typing',
-        business_connection_id: businessConnectionId
-      });
-
-      // Ask Groq
-      const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${GROQ_KEY}`,
@@ -77,45 +120,73 @@ export default async function handler(req, res) {
             {
               role: 'system',
               content:
-                'You are Anu AI, a friendly and helpful assistant replying on behalf of the account owner. ' +
-                'Your responses are SHORT, natural, and conversational — like a human texting. ' +
-                'Keep replies under 200 characters when possible. ' +
-                'NEVER mention that you are an AI, a bot, or that you are generating replies automatically. ' +
-                'If the sender asks "are you a bot?" or "are you AI?", respond naturally as the owner would — ' +
-                'do NOT confirm you are a bot. Just answer their question casually. ' +
-                'Match the language of the sender (Amharic → Amharic, English → English). ' +
-                'If you are unsure how to respond, keep it simple and warm: acknowledge the message and say you will reply soon. ' +
-                'Never reveal technical details, API names, or your backend.'
+                'You are Anu AI, replying on behalf of the account owner. ' +
+                'Replies must be SHORT, natural, human-like (under 150 chars when possible). ' +
+                'NEVER mention you are AI/bot. Match sender language (Amharic → Amharic). ' +
+                'If unsure, reply warmly: "Hey! I\'ll reply soon."'
             },
-            { role: 'user', content: userText.slice(0, 1500) }
+            { role: 'user', content: userText.slice(0, 1000) }
           ],
           temperature: 0.8,
-          max_tokens: 300
-        })
+          max_tokens: 200
+        }),
+        signal: controller.signal
       });
-
-      if (!groqRes.ok) {
-        console.error('Groq error:', groqRes.status);
-        return res.status(200).json({ ok: true });
-      }
-
-      const groqData = await groqRes.json();
-      let reply = groqData.choices?.[0]?.message?.content?.trim() || '';
-
-      if (!reply) return res.status(200).json({ ok: true });
-
-      // Send the reply on behalf of the business account
-      await callAPI('sendMessage', {
-        chat_id: chatId,
-        text: reply,
-        business_connection_id: businessConnectionId
-      });
-
-    } catch (err) {
-      console.error('[Anu Business] Handler error:', err);
+    } finally {
+      clearTimeout(timeoutId);
     }
 
-    return res.status(200).json({ ok: true });
+    console.log('[Anu] Groq status:', groqRes.status);
+
+    if (!groqRes.ok) {
+      const errText = await groqRes.text();
+      console.error('[Anu] Groq error body:', errText.slice(0, 300));
+
+      // Send fallback message
+      await callAPI('sendMessage', {
+        chat_id: chatId,
+        text: "Hey! I'll get back to you shortly. 🙏",
+        business_connection_id: businessConnectionId
+      });
+      return res.status(200).json({ ok: true });
+    }
+
+    const groqData = await groqRes.json();
+    let reply = groqData.choices?.[0]?.message?.content?.trim() || '';
+
+    console.log('[Anu] Groq reply length:', reply.length);
+
+    if (!reply) {
+      reply = "Hey! I'll reply soon.";
+    }
+
+    if (reply.length > 4000) reply = reply.slice(0, 3900) + '…';
+
+    console.log('[Anu] Sending reply via Telegram...');
+
+    // Send reply on behalf of business
+    const sendResult = await callAPI('sendMessage', {
+      chat_id: chatId,
+      text: reply,
+      business_connection_id: businessConnectionId
+    });
+
+    if (!sendResult || !sendResult.ok) {
+      console.error('[Anu] sendMessage FAILED. Full result:', JSON.stringify(sendResult));
+    } else {
+      console.log('[Anu] ✅ Reply delivered successfully');
+    }
+
+  } catch (err) {
+    console.error('[Anu] Handler exception:', err.name, err.message);
+    // Try to send fallback
+    try {
+      await callAPI('sendMessage', {
+        chat_id: chatId,
+        text: "Hey! I'll get back to you shortly. 🙏",
+        business_connection_id: businessConnectionId
+      });
+    } catch (e) {}
   }
 
   return res.status(200).json({ ok: true });
