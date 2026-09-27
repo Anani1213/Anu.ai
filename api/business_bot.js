@@ -93,18 +93,18 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Typing indicator
-    await callAPI('sendChatAction', {
+    // Typing indicator (fire and forget)
+    callAPI('sendChatAction', {
       chat_id: chatId,
       action: 'typing',
       business_connection_id: businessConnectionId
-    });
+    }).catch(() => {});
 
     console.log('[Anu] Calling Groq...');
 
-    // Groq call with 8s timeout (Vercel Hobby plan = 10s)
+    // Groq call with 9s timeout (Vercel Hobby plan = 10s)
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 9000);
 
     let groqRes;
     try {
@@ -115,7 +115,7 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'llama-3.1-8b-instant',
+          model: 'llama-3.3-70b-versatile',
           messages: [
             {
               role: 'system',
@@ -140,7 +140,10 @@ export default async function handler(req, res) {
 
     if (!groqRes.ok) {
       const errText = await groqRes.text();
-      console.error('[Anu] Groq error body:', errText.slice(0, 300));
+      console.error('[Anu] Groq FAILED - Status:', groqRes.status);
+      console.error('[Anu] Groq FAILED - Body:', errText);
+      console.error('[Anu] Groq FAILED - Model used:', 'llama-3.3-70b-versatile');
+      console.error('[Anu] Groq FAILED - Key prefix:', GROQ_KEY.slice(0, 12) + '...');
 
       // Send fallback message
       await callAPI('sendMessage', {
