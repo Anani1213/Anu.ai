@@ -1,6 +1,6 @@
 /* ============================================================
-   Anu AI — Telegram Business Bot (v2)
-   Improved error handling, timeout guard, detailed logging
+   Anu AI — Telegram Business Bot (v3)
+   Updated model: openai/gpt-oss-120b
    ============================================================ */
 
 export default async function handler(req, res) {
@@ -115,7 +115,7 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: 'openai/gpt-oss-120b',
           messages: [
             {
               role: 'system',
@@ -142,7 +142,7 @@ export default async function handler(req, res) {
       const errText = await groqRes.text();
       console.error('[Anu] Groq FAILED - Status:', groqRes.status);
       console.error('[Anu] Groq FAILED - Body:', errText);
-      console.error('[Anu] Groq FAILED - Model used:', 'llama-3.3-70b-versatile');
+      console.error('[Anu] Groq FAILED - Model used:', 'openai/gpt-oss-120b');
       console.error('[Anu] Groq FAILED - Key prefix:', GROQ_KEY.slice(0, 12) + '...');
 
       // Send fallback message
