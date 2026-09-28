@@ -1,17 +1,20 @@
 /* ============================================================
-   Anu Council — Multi-AI Orchestration v2
-   4 AI personas think in parallel → Coordinator synthesizes ONE answer
-   Uses ONLY verified working Groq models
+   Anu Council — Multi-AI Orchestration v3
+   Uses ONLY verified working Groq models:
+   • openai/gpt-oss-120b
+   • openai/gpt-oss-20b
+   • qwen/qwen3.8-27b
    ============================================================ */
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 
 /* ═══════════════════════════════════════════════════════════
    COUNCIL MEMBERS
-   Uses 3 working models with 4 distinct personalities:
-   • GPT OSS 120B (deep reasoning) — 2 different prompts
-   • GPT OSS 20B  (fast core)
-   • Qwen 3 32B   (structured logic)
+   4 distinct personalities using 3 verified models:
+   • GPT OSS 120B  → Master Reasoning (deep analysis)
+   • GPT OSS 20B   → Fast Core (quick & practical)
+   • Qwen 3.8 27B  → Logic Analyst (structured thinking)
+   • GPT OSS 120B  → Vision Scout (creative perspectives)
    ═══════════════════════════════════════════════════════════ */
 const COUNCIL_MODELS = [
   {
@@ -53,7 +56,7 @@ APPROACH:
 Give your BEST answer. Be practical, not theoretical. Use Markdown when helpful.`
   },
   {
-    id: 'qwen/qwen3-32b',
+    id: 'qwen/qwen3.8-27b',
     name: 'Logic Analyst',
     short: 'Logic',
     icon: '📊',
@@ -181,7 +184,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     return res.status(200).json({
-      status: 'Anu Council v2 is running',
+      status: 'Anu Council v3 is running',
       models: COUNCIL_MODELS.map(m => ({ name: m.name, id: m.id })),
       coordinator: COORDINATOR_MODEL
     });
