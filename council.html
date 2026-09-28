@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0D0E12" />
+<title>Anu Council — Multi-AI Intelligence</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+
+<style>
+:root{
+  --obsidian:#0D0E12; --surface:#16181E; --surface-2:#1C1F27;
+  --field:#111318; --line:#2A2D37;
+  --cyan:#00F2FE; --mint:#00FFC6; --blue:#4FACFE; --purple:#8B7CFF;
+  --crystal:#F3F4F6; --muted:#9CA3AF; --dim:#6B7280; --dim2:#5C6270;
+  --danger:#FF6B81;
+}
+*{ margin:0; padding:0; box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  background:var(--obsidian); color:var(--crystal);
+  font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+  overflow:hidden; -webkit-font-smoothing:antialiased;
+  font-size:15px; line-height:1.5;
+}
+button{ font-family:inherit; cursor:pointer; }
+input,textarea{ font-family:inherit; }
+.hidden{ display:none !important; }
+
+#bg{
+  position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:
+    radial-gradient(900px 520px at 10% -12%, rgba(0,242,254,.10), transparent 62%),
+    radial-gradient(820px 520px at 92% 112%, rgba(139,124,255,.10), transparent 62%),
+    radial-gradient(600px 400px at 50% 50%, rgba(0,255,198,.025), transparent 70%);
+}
+::-webkit-scrollbar{ width:10px; height:10px; }
+::-webkit-scrollbar-track{ background:transparent; }
+::-webkit-scrollbar-thumb{ background:#252833; border-radius:20px; border:2px solid var(--obsidian); }
+::-webkit-scrollbar-thumb:hover{ background:#343948; }
+*{ scrollbar-width:thin; scrollbar-color:#252833 transparent; }
+
+/* ─── LAYOUT ─── */
+#app{ position:relative; z-index:1; display:flex; height:100vh; height:100dvh; }
+
+/* Sidebar */
+#sidebar{
+  width:280px; flex:0 0 280px;
+  background:rgba(17,19,25,.86);
+  backdrop-filter:blur(22px);
+  -webkit-backdrop-filter:blur(22px);
+  border-right:1px solid #21242E;
+  display:flex; flex-direction:column;
+  z-index:60;
+  transition:transform .3s cubic-bezier(.4,0,.2,1);
+}
+@media(max-width:900px){
+  #sidebar{
+    position:fixed; inset:0 auto 0 0; width:290px;
+    transform:translateX(-102%);
+    box-shadow:30px 0 80px -20px rgba(0,0,0,.9);
+  }
+  #sidebar.open{ transform:translateX(0); }
+}
+.side-brand{
+  padding:16px; display:flex; align-items:center; gap:12px;
+  border-bottom:1px solid #1D2029;
+}
+.side-brand__logo{
+  width:42px; height:42px; border-radius:13px;
+  display:grid; place-items:center;
+  background:linear-gradient(135deg, rgba(0,242,254,.20), rgba(139,124,255,.20));
+  border:1px solid rgba(0,242,254,.3);
+  box-shadow:0 0 22px -6px rgba(0,242,254,.6);
+  font-size:22px;
+}
+.side-brand__meta{ flex:1; min-width:0; }
+.side-brand__name{
+  font-size:15px; font-weight:800; letter-spacing:-.02em;
+  background:linear-gradient(100deg,#00F2FE,#00FFC6,#8B7CFF);
+  -webkit-background-clip:text; background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+.side-brand__tag{
+  font-size:9.6px; color:var(--dim2);
+  letter-spacing:.14em; font-weight:600; text-transform:uppercase;
+  margin-top:2px;
+}
+
+.new-btn{
+  display:flex; align-items:center; gap:10px;
+  width:calc(100% - 28px); margin:14px 14px 10px;
+  padding:11px 14px; border-radius:13px; cursor:pointer;
+  background:linear-gradient(135deg, rgba(0,242,254,.14), rgba(139,124,255,.14));
+  border:1px solid rgba(0,242,254,.28);
+  color:#EAF9FF; font-weight:600; font-size:13.5px;
+  transition:all .22s ease;
+}
+.new-btn:hover{
+  background:linear-gradient(135deg, rgba(0,242,254,.24), rgba(139,124,255,.24));
+  border-color:rgba(0,242,254,.5);
+  box-shadow:0 0 26px -8px rgba(0,242,254,.7);
+}
+
+.side-list{
+  flex:1; overflow-y:auto; padding:0 10px 10px;
+}
+.hist-item{
+  display:flex; align-items:center; gap:9px;
+  padding:10px 12px; border-radius:11px; cursor:pointer;
+  font-size:13px; color:#B7BDC9; margin-bottom:2px;
+  border:1px solid transparent;
+  transition:all .18s ease;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.hist-item:hover{ background:#1A1D25; color:var(--crystal); }
+.hist-item.active{
+  background:linear-gradient(90deg, rgba(0,242,254,.13), rgba(139,124,255,.05));
+  border-color:rgba(0,242,254,.24);
+  color:#EAF9FF;
+}
+.hist-item .txt{ flex:1; overflow:hidden; text-overflow:ellipsis; }
+.hist-item .del{
+  opacity:0; flex:0 0 auto; color:var(--dim);
+  background:none; border:none; padding:2px;
+  transition:opacity .18s, color .18s;
+}
+.hist-item:hover .del{ opacity:1; }
+.hist-item .del:hover{ color:var(--danger); }
+
+.side-footer{
+  padding:12px 14px;
+  border-top:1px solid #1D2029;
+  font-size:10.6px;
+  color:var(--dim2);
+  letter-spacing:.06em;
+  text-align:center;
+}
+
+/* Main */
+#main{
+  flex:1; display:flex; flex-direction:column;
+  min-width:0; position:relative;
+}
+
+/* Header */
+#header{
+  height:62px; flex:0 0 62px;
+  display:flex; align-items:center; gap:12px;
+  padding:0 16px;
+  border-bottom:1px solid #1D2029;
+  background:rgba(13,14,18,.72);
+  backdrop-filter:blur(18px);
+  position:relative; z-index:40;
+}
+.icon-btn{
+  display:grid; place-items:center;
+  width:36px; height:36px; border-radius:11px;
+  background:transparent; border:1px solid transparent;
+  color:var(--muted); cursor:pointer;
+  transition:all .2s ease;
+}
+.icon-btn:hover{ background:#1A1D25; color:var(--crystal); border-color:#262A35; }
+.council-badge{
+  display:flex; align-items:center; gap:8px;
+  padding:7px 12px;
+  background:linear-gradient(135deg, rgba(0,242,254,.10), rgba(139,124,255,.10));
+  border:1px solid rgba(0,242,254,.24);
+  border-radius:11px;
+  font-size:13px; font-weight:600; color:var(--crystal);
+}
+.council-badge .pulse{
+  width:7px; height:7px; border-radius:50%;
+  background:var(--mint);
+  box-shadow:0 0 10px var(--mint);
+  animation:pulse 2s infinite;
+}
+@keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.4} }
+.council-badge .count{
+  background:rgba(0,242,254,.20);
+  color:var(--cyan);
+  padding:1px 7px; border-radius:6px;
+  font-size:10.5px; font-weight:700;
+  margin-left:4px;
+}
+
+/* Chat area */
+#scroll{
+  flex:1; overflow-y:auto;
+  scroll-behavior:smooth;
+}
+#messages{
+  max-width:880px; margin:0 auto;
+  padding:28px 20px 20px;
+}
+
+/* Welcome */
+.welcome{
+  padding:20px 6px;
+  text-align:center;
+  animation:fadeUp .6s ease both;
+}
+@keyframes fadeUp{
+  from{ opacity:0; transform:translateY(12px); }
+  to  { opacity:1; transform:translateY(0); }
+}
+.welcome-orb{
+  width:92px; height:92px; margin:0 auto 20px;
+  border-radius:28px;
+  display:grid; place-items:center;
+  background:linear-gradient(135deg, rgba(0,242,254,.22), rgba(139,124,255,.22));
+  border:1px solid rgba(0,242,254,.35);
+  box-shadow:
+    0 0 60px -12px rgba(0,242,254,.7),
+    inset 0 0 40px -12px rgba(139,124,255,.4);
+  font-size:42px;
+  animation:float 4s ease-in-out infinite;
+}
+@keyframes float{
+  0%,100%{ transform:translateY(0); }
+  50%    { transform:translateY(-6px); }
+}
+.welcome h1{
+  font-size:32px; font-weight:800;
+  letter-spacing:-.03em; line-height:1.2;
+  margin-bottom:10px;
+}
+.welcome h1 .grad{
+  background:linear-gradient(100deg,#00F2FE,#00FFC6,#8B7CFF);
+  -webkit-background-clip:text; background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+.welcome p{
+  font-size:14px; color:#8A91A0;
+  line-height:1.65; max-width:520px;
+  margin:0 auto 32px;
+}
+
+/* Council grid */
+.council-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));
+  gap:10px;
+  max-width:680px;
+  margin:0 auto 32px;
+}
+.council-card{
+  padding:14px;
+  border-radius:14px;
+  background:rgba(22,24,30,.6);
+  border:1px solid #262A35;
+  text-align:left;
+  transition:all .25s ease;
+}
+.council-card:hover{
+  border-color:rgba(0,242,254,.4);
+  transform:translateY(-2px);
+  box-shadow:0 18px 40px -22px rgba(0,242,254,.7);
+}
+.council-card__icon{ font-size:22px; margin-bottom:6px; }
+.council-card__name{
+  font-size:13px; font-weight:700;
+  color:var(--crystal); margin-bottom:3px;
+}
+.council-card__role{
+  font-size:11.2px; color:#7C8393; line-height:1.5;
+}
+
+/* Suggestions */
+.sugg-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(220px,1fr));
+  gap:10px;
+  max-width:680px;
+  margin:0 auto;
+}
+.sugg{
+  text-align:left; padding:14px 15px;
+  border-radius:15px; cursor:pointer;
+  background:rgba(22,24,30,.7);
+  border:1px solid #262A35;
+  transition:all .22s ease;
+  color:#D6DAE3;
+}
+.sugg:hover{
+  border-color:rgba(0,242,254,.4);
+  background:rgba(28,31,39,.95);
+  transform:translateY(-2px);
+  box-shadow:0 18px 40px -22px rgba(0,242,254,.8);
+}
+.sugg .st{
+  font-size:13.2px; font-weight:600;
+  color:var(--crystal); margin-bottom:4px;
+}
+.sugg .sd{ font-size:11.8px; color:#7C8393; line-height:1.5; }
+
+/* Messages */
+.msg{ margin-bottom:26px; animation:msgIn .45s cubic-bezier(.16,1,.3,1) both; }
+@keyframes msgIn{
+  from{ opacity:0; transform:translateY(12px); }
+  to  { opacity:1; transform:none; }
+}
+
+.msg-user{
+  display:flex; justify-content:flex-end;
+}
+.user-bubble{
+  max-width:82%; padding:13px 18px;
+  border-radius:18px 18px 4px 18px;
+  background:linear-gradient(135deg, rgba(0,242,254,.15), rgba(139,124,255,.10));
+  border:1px solid rgba(0,242,254,.25);
+  color:var(--crystal); font-size:14.6px;
+  line-height:1.68; white-space:pre-wrap;
+  word-break:break-word;
+  box-shadow:0 10px 30px -18px rgba(0,242,254,.6);
+}
+
+/* Council accordion */
+.council-toggle{
+  display:flex; align-items:center; gap:10px;
+  padding:11px 14px;
+  border-radius:14px;
+  background:linear-gradient(180deg, rgba(28,31,39,.72), rgba(22,24,30,.55));
+  border:1px solid #262A35;
+  cursor:pointer;
+  margin-bottom:14px;
+  transition:all .25s ease;
+  user-select:none;
+}
+.council-toggle:hover{ border-color:rgba(0,242,254,.35); }
+.council-toggle.open{
+  border-color:rgba(0,242,254,.4);
+  box-shadow:0 0 30px -14px rgba(0,242,254,.7);
+}
+.council-toggle__orbs{
+  display:flex; gap:-4px;
+}
+.council-orb{
+  width:22px; height:22px; border-radius:50%;
+  display:grid; place-items:center;
+  font-size:11px;
+  background:linear-gradient(135deg, rgba(0,242,254,.3), rgba(139,124,255,.3));
+  border:1.5px solid var(--obsidian);
+  margin-left:-6px;
+  box-shadow:0 0 8px rgba(0,242,254,.4);
+}
+.council-orb:first-child{ margin-left:0; }
+.council-toggle__title{
+  flex:1; font-size:12.5px; font-weight:600;
+  color:#D6DAE3;
+}
+.council-toggle__status{
+  font-size:11px; color:#7C8393;
+  font-weight:500;
+}
+.council-toggle__chev{
+  color:var(--dim);
+  transition:transform .35s cubic-bezier(.4,0,.2,1);
+}
+.council-toggle.open .council-toggle__chev{ transform:rotate(180deg); }
+
+/* Council responses */
+.council-body{
+  max-height:0; opacity:0; overflow:hidden;
+  transition:max-height .5s cubic-bezier(.4,0,.2,1), opacity .3s ease;
+  margin-bottom:14px;
+}
+.council-toggle.open + .council-body{
+  max-height:2000px; opacity:1;
+  margin-top:-14px;
+  margin-bottom:14px;
+}
+.council-inner{
+  padding:14px;
+  border-radius:0 0 14px 14px;
+  background:rgba(17,19,25,.72);
+  border:1px solid #262A35;
+  border-top:none;
+  display:flex; flex-direction:column; gap:10px;
+}
+.model-resp{
+  padding:11px 13px;
+  border-radius:11px;
+  background:rgba(22,24,30,.6);
+  border:1px solid #21242E;
+  animation:stepIn .35s ease both;
+}
+@keyframes stepIn{
+  from{ opacity:0; transform:translateX(-6px); }
+  to  { opacity:1; transform:none; }
+}
+.model-resp__head{
+  display:flex; align-items:center; gap:8px;
+  margin-bottom:7px;
+  font-size:11.5px;
+}
+.model-resp__icon{ font-size:14px; }
+.model-resp__name{
+  font-weight:700; color:#D6DAE3;
+  letter-spacing:.02em;
+}
+.model-resp__time{
+  margin-left:auto;
+  font-size:10.4px; color:var(--dim2);
+  font-family:'JetBrains Mono',monospace;
+}
+.model-resp__body{
+  font-size:13px; color:#B7BDC9;
+  line-height:1.65;
+  max-height:200px;
+  overflow-y:auto;
+  padding-right:6px;
+}
+.model-resp.failed{
+  border-color:rgba(255,107,129,.3);
+  background:rgba(255,107,129,.05);
+}
+.model-resp.failed .model-resp__body{
+  color:#FF8296; font-size:12.4px;
+}
+
+/* Final answer */
+.final-answer{
+  padding:18px 20px;
+  border-radius:16px;
+  background:linear-gradient(180deg, rgba(0,242,254,.05), rgba(139,124,255,.03));
+  border:1px solid rgba(0,242,254,.28);
+  box-shadow:0 20px 50px -25px rgba(0,242,254,.6);
+  position:relative;
+  overflow:hidden;
+}
+.final-answer::before{
+  content:'';
+  position:absolute; top:0; left:0; right:0; height:2px;
+  background:linear-gradient(90deg, #00F2FE, #00FFC6, #8B7CFF);
+}
+.final-answer__head{
+  display:flex; align-items:center; gap:8px;
+  margin-bottom:12px;
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--cyan);
+}
+.final-answer__head svg{ width:14px; height:14px; }
+
+/* Typing indicator */
+.typing{
+  display:flex; gap:14px;
+  padding:14px 0;
+  align-items:flex-start;
+}
+.typing-avatar{
+  width:40px; height:40px; flex:0 0 40px;
+  border-radius:13px;
+  display:grid; place-items:center;
+  background:linear-gradient(135deg, rgba(0,242,254,.2), rgba(139,124,255,.2));
+  border:1px solid rgba(0,242,254,.3);
+  font-size:20px;
+  animation:float 2s ease-in-out infinite;
+}
+.typing-dots{
+  display:flex; gap:5px;
+  padding:12px 16px;
+  border-radius:14px;
+  background:rgba(22,24,30,.7);
+  border:1px solid #262A35;
+  align-self:center;
+}
+.typing-dots span{
+  width:7px; height:7px; border-radius:50%;
+  background:linear-gradient(135deg, #00F2FE, #8B7CFF);
+  animation:bounce 1.4s infinite;
+}
+.typing-dots span:nth-child(2){ animation-delay:.2s; }
+.typing-dots span:nth-child(3){ animation-delay:.4s; }
+@keyframes bounce{
+  0%,60%,100%{ transform:translateY(0); opacity:.4; }
+  30%        { transform:translateY(-6px); opacity:1; }
+}
+
+/* Prose */
+.prose{
+  font-size:14.8px; line-height:1.78;
+  color:#E7E9EE; word-break:break-word;
+}
+.prose > *:first-child{ margin-top:0 !important; }
+.prose > *:last-child{ margin-bottom:0 !important; }
+.prose p{ margin:0 0 13px; }
+.prose h1,.prose h2,.prose h3,.prose h4{
+  color:var(--crystal); font-weight:700;
+  line-height:1.35; margin:20px 0 10px;
+  letter-spacing:-.01em;
+}
+.prose h1{ font-size:21px; }
+.prose h2{ font-size:18px; }
+.prose h3{ font-size:16px; }
+.prose h4{ font-size:14.6px; }
+.prose strong{ color:#FFFFFF; font-weight:700; }
+.prose em{ color:#D6DAE3; }
+.prose a{ color:#4FD8FE; text-decoration:none; border-bottom:1px solid rgba(79,216,254,.35); }
+.prose a:hover{ border-bottom-color:#4FD8FE; }
+.prose ul,.prose ol{ margin:0 0 13px; padding-left:22px; }
+.prose li{ margin-bottom:6px; }
+.prose ul li::marker{ color:var(--cyan); }
+.prose ol li::marker{ color:var(--purple); font-weight:600; }
+.prose blockquote{
+  margin:14px 0; padding:10px 16px;
+  border-left:3px solid var(--cyan);
+  background:rgba(0,242,254,.05);
+  border-radius:0 10px 10px 0;
+  color:#C3C9D4;
+}
+.prose hr{ border:none; border-top:1px solid var(--line); margin:20px 0; }
+.prose table{
+  width:100%; border-collapse:collapse;
+  margin:14px 0; font-size:13.5px;
+  border:1px solid var(--line);
+  border-radius:12px; overflow:hidden;
+}
+.prose th{
+  background:var(--surface-2);
+  padding:9px 12px; text-align:left;
+  color:var(--crystal); font-weight:600;
+  border-bottom:1px solid var(--line);
+}
+.prose td{
+  padding:9px 12px;
+  border-bottom:1px solid #21242E;
+  color:#C3C9D4;
+}
+.prose tr:last-child td{ border-bottom:none; }
+.prose :not(pre) > code{
+  font-family:'JetBrains Mono',monospace;
+  font-size:12.8px;
+  background:rgba(0,242,254,.09);
+  color:#7DE9FF;
+  padding:2px 6px; border-radius:6px;
+  border:1px solid rgba(0,242,254,.16);
+}
+.code-block{
+  margin:15px 0;
+  border-radius:13px;
+  overflow:hidden;
+  border:1px solid #262A35;
+  background:#0F1117;
+}
+.code-bar{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 12px;
+  background:var(--surface);
+  border-bottom:1px solid #262A35;
+}
+.code-lang{
+  font-family:'JetBrains Mono',monospace;
+  font-size:11px; font-weight:600;
+  letter-spacing:.1em; text-transform:uppercase;
+  color:#7C8393;
+}
+.copy-btn{
+  display:flex; align-items:center; gap:6px;
+  padding:5px 10px; border-radius:8px;
+  background:var(--surface-2);
+  border:1px solid var(--line);
+  color:var(--muted);
+  font-size:11.4px; font-weight:600;
+  transition:all .2s ease;
+}
+.copy-btn:hover{ background:#22262F; color:var(--crystal); }
+.copy-btn.copied{
+  color:var(--cyan);
+  border-color:rgba(0,242,254,.45);
+  background:rgba(0,242,254,.09);
+}
+.code-block pre{
+  margin:0; padding:14px 16px;
+  overflow-x:auto;
+  background:#0F1117 !important;
+}
+.code-block pre code{
+  font-family:'JetBrains Mono',monospace;
+  font-size:12.9px; line-height:1.68;
+  background:transparent !important;
+  padding:0 !important;
+  border:none !important;
+  color:#E7E9EE;
+}
+.hljs{ background:transparent !important; }
+
+/* Meta bar */
+.meta-bar{
+  display:flex; align-items:center; gap:12px;
+  margin-top:12px;
+  padding-top:12px;
+  border-top:1px solid rgba(42,45,55,.7);
+  font-size:10.6px;
+  color:var(--dim2);
+  font-family:'JetBrains Mono',monospace;
+  letter-spacing:.04em;
+}
+.meta-bar span{
+  display:flex; align-items:center; gap:5px;
+}
+.meta-bar svg{ width:11px; height:11px; }
+
+/* Composer */
+#composer-wrap{
+  flex:0 0 auto;
+  padding:8px 20px 14px;
+  background:linear-gradient(180deg, rgba(13,14,18,0), rgba(13,14,18,.92) 42%);
+  position:relative; z-index:30;
+}
+#composer{
+  max-width:880px; margin:0 auto;
+  background:rgba(22,24,30,.88);
+  backdrop-filter:blur(22px) saturate(150%);
+  -webkit-backdrop-filter:blur(22px) saturate(150%);
+  border:1px solid var(--line);
+  border-radius:22px;
+  padding:11px 12px 9px;
+  transition:border-color .25s, box-shadow .25s;
+  box-shadow:0 24px 60px -30px rgba(0,0,0,.95);
+}
+#composer:focus-within{
+  border-color:rgba(0,242,254,.42);
+  box-shadow:0 24px 70px -30px rgba(0,0,0,.95), 0 0 0 4px rgba(0,242,254,.07);
+}
+#input{
+  width:100%; resize:none;
+  border:none; outline:none;
+  background:transparent;
+  color:var(--crystal);
+  font-size:14.8px; line-height:1.62;
+  max-height:200px;
+  padding:6px 6px 4px;
+  overflow-y:auto;
+}
+#input::placeholder{ color:var(--dim2); }
+.composer-row{
+  display:flex; align-items:center; gap:8px;
+  margin-top:6px;
+}
+.composer-hint{
+  flex:1;
+  font-size:11px;
+  color:var(--dim2);
+  letter-spacing:.02em;
+}
+.send-btn{
+  display:grid; place-items:center;
+  width:38px; height:38px;
+  border-radius:12px;
+  border:none;
+  color:#04121A;
+  background:linear-gradient(135deg,#00F2FE,#8B7CFF);
+  box-shadow:0 8px 24px -10px rgba(0,242,254,.95);
+  transition:all .2s ease;
+}
+.send-btn:hover:not(:disabled){
+  transform:translateY(-1px) scale(1.04);
+  box-shadow:0 12px 30px -10px rgba(139,124,255,.95);
+}
+.send-btn:disabled{
+  opacity:.32; cursor:not-allowed;
+  box-shadow:none;
+}
+#composer-wrap .disclaimer{
+  max-width:880px; margin:9px auto 0;
+  text-align:center;
+  font-size:11px; color:var(--dim2);
+}
+
+/* Toast */
+.toast{
+  position:fixed; bottom:26px; left:50%;
+  transform:translateX(-50%) translateY(20px);
+  background:rgba(28,31,39,.98);
+  border:1px solid var(--line);
+  color:var(--crystal);
+  padding:11px 18px;
+  border-radius:13px;
+  font-size:13px; font-weight:500;
+  z-index:9999;
+  box-shadow:0 24px 60px -20px rgba(0,0,0,.95);
+  opacity:0; pointer-events:none;
+  transition:all .35s cubic-bezier(.16,1,.3,1);
+  max-width:90vw;
+}
+.toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+.toast.err{ border-color:rgba(255,107,129,.45); }
+
+/* Mobile */
+@media(max-width:520px){
+  .welcome h1{ font-size:26px; }
+  .welcome-orb{ width:76px; height:76px; font-size:34px; }
+  #messages{ padding:20px 14px 14px; }
+  #composer-wrap{ padding:8px 12px 12px; }
+  .council-grid{ grid-template-columns:1fr 1fr; }
+  .sugg-grid{ grid-template-columns:1fr; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+}
+</style>
+</head>
+<body>
+
+<div id="bg"></div>
+
+<div id="app">
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div class="side-brand">
+      <div class="side-brand__logo">🧠</div>
+      <div class="side-brand__meta">
+        <div class="side-brand__name">Anu Council</div>
+        <div class="side-brand__tag">Multi-AI Intelligence</div>
+      </div>
+    </div>
+
+    <button class="new-btn" id="newChatBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+      New Conversation
+    </button>
+
+    <div class="side-list" id="historyList"></div>
+
+    <div class="side-footer">
+      4 AIs · 1 Answer · Zero Cost
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div id="main">
+    <header id="header">
+      <button class="icon-btn" id="menuBtn" title="Menu">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+
+      <div class="council-badge">
+        <span class="pulse"></span>
+        Anu Council
+        <span class="count">4 AI</span>
+      </div>
+
+      <div style="flex:1;"></div>
+
+      <button class="icon-btn" id="clearBtn" title="Clear history">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+      </button>
+    </header>
+
+    <div id="scroll">
+      <div id="messages"></div>
+    </div>
+
+    <div id="composer-wrap">
+      <div id="composer">
+        <textarea id="input" rows="1" placeholder="Ask anything — 4 AIs will answer together..." autocomplete="off" spellcheck="true"></textarea>
+        <div class="composer-row">
+          <span class="composer-hint" id="hint">⏎ to send · Shift+⏎ for new line</span>
+          <button class="send-btn" id="sendBtn" title="Send" disabled>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </div>
+      </div>
+      <p class="disclaimer">Anu Council · 4 AI models · Synthesis via Master Reasoner</p>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════
+   CONFIG
+   ═══════════════════════════════════════════════════════ */
+const API_ENDPOINT = '/api/multi-ai';
+const STORAGE_KEY = 'anu_council_history_v1';
+
+const COUNCIL_INFO = [
+  { icon: '🧠', name: 'Master Reasoning', role: 'Deep logical analysis' },
+  { icon: '⚡', name: 'Fast Core',         role: 'Quick, direct answers' },
+  { icon: '📊', name: 'Logic Analyst',     role: 'Structured thinking' },
+  { icon: '🌐', name: 'Vision Scout',      role: 'Broad knowledge' }
+];
+
+const SUGGESTIONS = [
+  { t: 'Analyze a decision',  d: 'Should I switch careers to AI engineering?',  p: 'I am considering switching my career to AI engineering. Please analyze this decision considering risks, opportunities, time investment, and long-term outlook.' },
+  { t: 'Write production code', d: 'Debounced React hook with TypeScript', p: 'Write a production-ready TypeScript React hook that debounces a value. Include full JSDoc comments and usage examples.' },
+  { t: 'Explain a concept',   d: 'Quantum entanglement in simple terms',   p: 'Explain quantum entanglement in simple, intuitive terms with a real-world analogy. Then explain how it is used in quantum computing.' },
+  { t: 'Plan a project',      d: '90-day plan to launch a SaaS',           p: 'Create a detailed 90-day plan to launch a B2B SaaS product targeting small businesses. Include weekly milestones, key metrics, and risk mitigation.' }
+];
+
+/* ═══════════════════════════════════════════════════════
+   STATE
+   ═══════════════════════════════════════════════════════ */
+const state = {
+  chats: [],
+  currentChatId: null,
+  sending: false
+};
+
+/* ═══════════════════════════════════════════════════════
+   UTILITIES
+   ═══════════════════════════════════════════════════════ */
+const $ = (id) => document.getElementById(id);
+
+function uid() {
+  return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+let toastTimer = null;
+function toast(msg, isErr) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (isErr ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.className = 'toast' + (isErr ? ' err' : '');
+  }, 2800);
+}
+
+/* ═══════════════════════════════════════════════════════
+   STORAGE
+   ═══════════════════════════════════════════════════════ */
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    state.chats = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(state.chats)) state.chats = [];
+  } catch (e) { state.chats = []; }
+  state.currentChatId = state.chats.length ? state.chats[0].id : null;
+}
+
+function saveHistory() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.chats));
+  } catch (e) {}
+}
+
+function getCurrentChat() {
+  return state.chats.find(c => c.id === state.currentChatId) || null;
+}
+
+function createChat() {
+  const chat = {
+    id: uid(),
+    title: 'New Chat',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    messages: [] // { role: 'user'|'council', content?, responses?, finalAnswer?, timing? }
+  };
+  state.chats.unshift(chat);
+  state.currentChatId = chat.id;
+  saveHistory();
+  renderSidebar();
+  renderMessages();
+  return chat;
+}
+
+function deleteChat(id) {
+  state.chats = state.chats.filter(c => c.id !== id);
+  if (state.currentChatId === id) {
+    state.currentChatId = state.chats.length ? state.chats[0].id : null;
+  }
+  saveHistory();
+  renderSidebar();
+  renderMessages();
+}
+
+function selectChat(id) {
+  if (state.sending) return;
+  state.currentChatId = id;
+  renderSidebar();
+  renderMessages();
+  closeSidebar();
+}
+
+/* ═══════════════════════════════════════════════════════
+   SIDEBAR
+   ═══════════════════════════════════════════════════════ */
+function renderSidebar() {
+  const list = $('historyList');
+  list.innerHTML = '';
+
+  if (!state.chats.length) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'padding:26px 12px;text-align:center;font-size:12px;color:var(--dim2);line-height:1.6;';
+    empty.textContent = 'No conversations yet. Ask anything!';
+    list.appendChild(empty);
+    return;
+  }
+
+  state.chats.forEach(chat => {
+    const item = document.createElement('div');
+    item.className = 'hist-item' + (chat.id === state.currentChatId ? ' active' : '');
+
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('width', '14');
+    icon.setAttribute('height', '14');
+    icon.setAttribute('viewBox', '0 0 24 24');
+    icon.setAttribute('fill', 'none');
+    icon.setAttribute('stroke', 'currentColor');
+    icon.setAttribute('stroke-width', '1.9');
+    icon.setAttribute('stroke-linecap', 'round');
+    icon.setAttribute('stroke-linejoin', 'round');
+    icon.style.flex = '0 0 auto';
+    icon.innerHTML = '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>';
+
+    const txt = document.createElement('span');
+    txt.className = 'txt';
+    txt.textContent = chat.title || 'New Chat';
+
+    const del = document.createElement('button');
+    del.className = 'del';
+    del.title = 'Delete';
+    del.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
+    del.addEventListener('click', e => {
+      e.stopPropagation();
+      deleteChat(chat.id);
+      toast('Deleted');
+    });
+
+    item.appendChild(icon);
+    item.appendChild(txt);
+    item.appendChild(del);
+    item.addEventListener('click', () => selectChat(chat.id));
+    list.appendChild(item);
+  });
+}
+
+function openSidebar() {
+  $('sidebar').classList.add('open');
+}
+function closeSidebar() {
+  $('sidebar').classList.remove('open');
+}
+
+/* ═══════════════════════════════════════════════════════
+   MARKDOWN
+   ═══════════════════════════════════════════════════════ */
+const ICON_COPY = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2.5"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const ICON_CHECK = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+
+function decorateCode(root) {
+  root.querySelectorAll('pre').forEach(pre => {
+    if (pre.dataset.deco === '1') return;
+    pre.dataset.deco = '1';
+    const code = pre.querySelector('code');
+    if (!code) return;
+    try { hljs.highlightElement(code); } catch (e) {}
+
+    let lang = 'code';
+    const m = (code.className || '').match(/language-([\w+#-]+)/i);
+    if (m && m[1]) lang = m[1];
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'code-block';
+    const bar = document.createElement('div');
+    bar.className = 'code-bar';
+    const ls = document.createElement('span');
+    ls.className = 'code-lang';
+    ls.textContent = lang;
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.type = 'button';
+    btn.innerHTML = ICON_COPY + '<span>Copy</span>';
+    btn.addEventListener('click', () => {
+      const text = code.innerText;
+      const done = () => {
+        btn.classList.add('copied');
+        btn.innerHTML = ICON_CHECK + '<span>Copied</span>';
+        setTimeout(() => {
+          btn.classList.remove('copied');
+          btn.innerHTML = ICON_COPY + '<span>Copy</span>';
+        }, 1500);
+      };
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(done).catch(done);
+      } else done();
+    });
+    bar.appendChild(ls);
+    bar.appendChild(btn);
+    pre.parentNode.insertBefore(wrapper, pre);
+    wrapper.appendChild(bar);
+    wrapper.appendChild(pre);
+  });
+}
+
+function sanitize(root) {
+  root.querySelectorAll('script').forEach(s => s.remove());
+  root.querySelectorAll('*').forEach(el => {
+    [...el.attributes].forEach(a => {
+      if (/^on/i.test(a.name)) el.removeAttribute(a.name);
+    });
+  });
+}
+
+function renderMarkdown(el, text) {
+  let html = '';
+  try {
+    html = marked.parse(text || '', { breaks: true, gfm: true, headerIds: false, mangle: false });
+  } catch (e) {
+    html = '<p>' + escapeHtml(text || '') + '</p>';
+  }
+  el.innerHTML = html;
+  sanitize(el);
+  decorateCode(el);
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER
+   ═══════════════════════════════════════════════════════ */
+function renderMessages() {
+  const messagesEl = $('messages');
+  messagesEl.innerHTML = '';
+  const chat = getCurrentChat();
+
+  if (!chat || !chat.messages.length) {
+    renderWelcome();
+    return;
+  }
+
+  chat.messages.forEach(msg => {
+    if (msg.role === 'user') {
+      messagesEl.appendChild(buildUserNode(msg.content));
+    } else if (msg.role === 'council') {
+      messagesEl.appendChild(buildCouncilNode(msg));
+    }
+  });
+
+  requestAnimationFrame(() => {
+    const sc = $('scroll');
+    sc.scrollTop = sc.scrollHeight;
+  });
+}
+
+function renderWelcome() {
+  const wrap = document.createElement('div');
+  wrap.className = 'welcome';
+
+  const orb = document.createElement('div');
+  orb.className = 'welcome-orb';
+  orb.textContent = '🧠';
+
+  const h1 = document.createElement('h1');
+  h1.innerHTML = 'Anu <span class="grad">Council</span>';
+
+  const p = document.createElement('p');
+  p.textContent = 'Four AI minds. One unified answer. Every response is debated, cross-checked, and synthesized by our coordinator for maximum quality.';
+
+  const grid = document.createElement('div');
+  grid.className = 'council-grid';
+  COUNCIL_INFO.forEach(m => {
+    const card = document.createElement('div');
+    card.className = 'council-card';
+    card.innerHTML =
+      '<div class="council-card__icon">' + m.icon + '</div>' +
+      '<div class="council-card__name">' + escapeHtml(m.name) + '</div>' +
+      '<div class="council-card__role">' + escapeHtml(m.role) + '</div>';
+    grid.appendChild(card);
+  });
+
+  const suggGrid = document.createElement('div');
+  suggGrid.className = 'sugg-grid';
+  SUGGESTIONS.forEach(s => {
+    const btn = document.createElement('button');
+    btn.className = 'sugg';
+    btn.type = 'button';
+    btn.innerHTML = '<div class="st">' + escapeHtml(s.t) + '</div><div class="sd">' + escapeHtml(s.d) + '</div>';
+    btn.addEventListener('click', () => {
+      const input = $('input');
+      input.value = s.p;
+      autoGrow();
+      updateSendBtn();
+      input.focus();
+    });
+    suggGrid.appendChild(btn);
+  });
+
+  wrap.appendChild(orb);
+  wrap.appendChild(h1);
+  wrap.appendChild(p);
+  wrap.appendChild(grid);
+  wrap.appendChild(suggGrid);
+
+  $('messages').appendChild(wrap);
+}
+
+function buildUserNode(text) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg msg-user';
+  const bubble = document.createElement('div');
+  bubble.className = 'user-bubble';
+  bubble.textContent = text;
+  wrap.appendChild(bubble);
+  return wrap;
+}
+
+function buildCouncilNode(msg) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg';
+
+  // Toggle header
+  const toggle = document.createElement('div');
+  toggle.className = 'council-toggle';
+
+  const orbs = document.createElement('div');
+  orbs.className = 'council-toggle__orbs';
+  COUNCIL_INFO.forEach(m => {
+    const o = document.createElement('div');
+    o.className = 'council-orb';
+    o.textContent = m.icon;
+    orbs.appendChild(o);
+  });
+
+  const title = document.createElement('div');
+  title.className = 'council-toggle__title';
+  title.textContent = 'Council Reasoning';
+
+  const status = document.createElement('div');
+  status.className = 'council-toggle__status';
+  const okCount = (msg.responses || []).filter(r => r.ok).length;
+  status.textContent = okCount + '/4 responded';
+
+  const chev = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  chev.setAttribute('width', '14');
+  chev.setAttribute('height', '14');
+  chev.setAttribute('viewBox', '0 0 24 24');
+  chev.setAttribute('fill', 'none');
+  chev.setAttribute('stroke', 'currentColor');
+  chev.setAttribute('stroke-width', '2.2');
+  chev.setAttribute('stroke-linecap', 'round');
+  chev.setAttribute('stroke-linejoin', 'round');
+  chev.classList.add('council-toggle__chev');
+  chev.innerHTML = '<path d="m6 9 6 6 6-6"/>';
+
+  toggle.appendChild(orbs);
+  toggle.appendChild(title);
+  toggle.appendChild(status);
+  toggle.appendChild(chev);
+
+  // Body
+  const body = document.createElement('div');
+  body.className = 'council-body';
+  const inner = document.createElement('div');
+  inner.className = 'council-inner';
+
+  (msg.responses || []).forEach(r => {
+    const resp = document.createElement('div');
+    resp.className = 'model-resp' + (r.ok ? '' : ' failed');
+
+    const head = document.createElement('div');
+    head.className = 'model-resp__head';
+    head.innerHTML =
+      '<span class="model-resp__icon">' + (r.icon || '🤖') + '</span>' +
+      '<span class="model-resp__name">' + escapeHtml(r.name || 'Model') + '</span>' +
+      '<span class="model-resp__time">' + (r.elapsed ? r.elapsed + 'ms' : '') + '</span>';
+
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'model-resp__body';
+    if (r.ok && r.response) {
+      // Plain text preview (not full markdown, for compactness)
+      bodyEl.textContent = r.response.length > 500
+        ? r.response.slice(0, 500) + '…'
+        : r.response;
+    } else {
+      bodyEl.textContent = '❌ ' + (r.error || 'Failed');
+    }
+
+    resp.appendChild(head);
+    resp.appendChild(bodyEl);
+    inner.appendChild(resp);
+  });
+
+  body.appendChild(inner);
+
+  // Final answer
+  const finalEl = document.createElement('div');
+  finalEl.className = 'final-answer';
+
+  const finalHead = document.createElement('div');
+  finalHead.className = 'final-answer__head';
+  finalHead.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 7v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V7l-8-5z"/><path d="m9 12 2 2 4-4"/></svg>' +
+    'Unified Answer';
+
+  const finalBody = document.createElement('div');
+  finalBody.className = 'prose';
+  renderMarkdown(finalBody, msg.finalAnswer || '');
+
+  finalEl.appendChild(finalHead);
+  finalEl.appendChild(finalBody);
+
+  // Meta
+  if (msg.timing) {
+    const meta = document.createElement('div');
+    meta.className = 'meta-bar';
+    meta.innerHTML =
+      '<span>⚡ ' + (msg.timing.phase1 || 0) + 'ms parallel</span>' +
+      '<span>🧠 ' + (msg.timing.phase2 || 0) + 'ms synthesis</span>' +
+      '<span>⏱ ' + (msg.timing.total || 0) + 'ms total</span>';
+    finalEl.appendChild(meta);
+  }
+
+  // Toggle behavior
+  let open = false;
+  toggle.addEventListener('click', () => {
+    open = !open;
+    toggle.classList.toggle('open', open);
+  });
+
+  wrap.appendChild(toggle);
+  wrap.appendChild(body);
+  wrap.appendChild(finalEl);
+
+  return wrap;
+}
+
+/* ═══════════════════════════════════════════════════════
+   TYPING INDICATOR
+   ═══════════════════════════════════════════════════════ */
+function showTyping() {
+  const el = document.createElement('div');
+  el.className = 'typing';
+  el.id = 'typingIndicator';
+  el.innerHTML =
+    '<div class="typing-avatar">🧠</div>' +
+    '<div class="typing-dots"><span></span><span></span><span></span></div>';
+  $('messages').appendChild(el);
+  const sc = $('scroll');
+  sc.scrollTop = sc.scrollHeight;
+}
+
+function hideTyping() {
+  const el = $('typingIndicator');
+  if (el) el.remove();
+}
+
+/* ═══════════════════════════════════════════════════════
+   SEND
+   ═══════════════════════════════════════════════════════ */
+async function sendMessage(rawText) {
+  if (state.sending) return;
+  const text = (rawText || '').trim();
+  if (!text) return;
+
+  let chat = getCurrentChat();
+  if (!chat) chat = createChat();
+
+  // Clear input
+  const input = $('input');
+  input.value = '';
+  autoGrow();
+  updateSendBtn();
+
+  // Save user message
+  chat.messages.push({ role: 'user', content: text });
+  if (chat.messages.filter(m => m.role === 'user').length === 1) {
+    const t = text.replace(/\s+/g, ' ').trim();
+    chat.title = t.length > 44 ? t.slice(0, 44) + '…' : t;
+  }
+  chat.updatedAt = Date.now();
+  saveHistory();
+  renderSidebar();
+
+  // Remove welcome
+  const welcome = $('messages').querySelector('.welcome');
+  if (welcome) $('messages').innerHTML = '';
+
+  $('messages').appendChild(buildUserNode(text));
+  showTyping();
+
+  state.sending = true;
+  updateSendBtn();
+
+  try {
+    const res = await fetch(API_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: text })
+    });
+
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+
+    const data = await res.json();
+
+    hideTyping();
+
+    const councilMsg = {
+      role: 'council',
+      responses: data.responses || [],
+      finalAnswer: data.finalAnswer || '',
+      timing: data.timing || null,
+      timestamp: Date.now()
+    };
+
+    chat.messages.push(councilMsg);
+    chat.updatedAt = Date.now();
+    saveHistory();
+
+    $('messages').appendChild(buildCouncilNode(councilMsg));
+    requestAnimationFrame(() => {
+      const sc = $('scroll');
+      sc.scrollTop = sc.scrollHeight;
+    });
+
+  } catch (err) {
+    hideTyping();
+    console.error('Send error:', err);
+    toast('Failed to reach the council. Please retry.', true);
+
+    const failMsg = {
+      role: 'council',
+      responses: COUNCIL_INFO.map(m => ({ ...m, ok: false, error: 'Network error' })),
+      finalAnswer: '⚠️ **Connection failed.** Please check your internet and try again.',
+      timing: null
+    };
+    chat.messages.push(failMsg);
+    saveHistory();
+    $('messages').appendChild(buildCouncilNode(failMsg));
+  } finally {
+    state.sending = false;
+    updateSendBtn();
+    renderSidebar();
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   COMPOSER
+   ═══════════════════════════════════════════════════════ */
+function autoGrow() {
+  const el = $('input');
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+}
+
+function updateSendBtn() {
+  const el = $('input');
+  const btn = $('sendBtn');
+  btn.disabled = state.sending || el.value.trim().length === 0;
+}
+
+/* ═══════════════════════════════════════════════════════
+   EVENTS
+   ═══════════════════════════════════════════════════════ */
+function wireEvents() {
+  const input = $('input');
+
+  input.addEventListener('input', () => {
+    autoGrow();
+    updateSendBtn();
+  });
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!state.sending) sendMessage(input.value);
+    }
+  });
+
+  $('sendBtn').addEventListener('click', () => {
+    if (!state.sending) sendMessage(input.value);
+  });
+
+  $('newChatBtn').addEventListener('click', () => {
+    if (state.sending) { toast('Please wait for the current response.', true); return; }
+    createChat();
+    closeSidebar();
+    input.focus();
+  });
+
+  $('menuBtn').addEventListener('click', () => {
+    const sb = $('sidebar');
+    if (window.innerWidth <= 900) {
+      sb.classList.toggle('open');
+    } else {
+      // Desktop: just toggle a class if you want; for now, no-op
+      sb.classList.toggle('open');
+    }
+  });
+
+  $('clearBtn').addEventListener('click', () => {
+    if (!confirm('Delete all conversations?')) return;
+    state.chats = [];
+    state.currentChatId = null;
+    saveHistory();
+    renderSidebar();
+    renderMessages();
+    toast('All conversations cleared');
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeSidebar();
+  });
+
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 900) $('sidebar').classList.remove('open');
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   BOOT
+   ═══════════════════════════════════════════════════════ */
+function boot() {
+  if (typeof marked !== 'undefined' && marked.setOptions) {
+    marked.setOptions({ breaks: true, gfm: true, headerIds: false, mangle: false });
+  }
+  loadHistory();
+  wireEvents();
+  renderSidebar();
+  renderMessages();
+  autoGrow();
+  updateSendBtn();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
+</script>
+</body>
+</html>
