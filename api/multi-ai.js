@@ -1,55 +1,103 @@
 /* ============================================================
-   Anu Council — Multi-AI Orchestration
-   4 AIs think in parallel → Coordinator synthesizes ONE answer
+   Anu Council — Multi-AI Orchestration v2
+   4 AI personas think in parallel → Coordinator synthesizes ONE answer
+   Uses ONLY verified working Groq models
    ============================================================ */
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 
+/* ═══════════════════════════════════════════════════════════
+   COUNCIL MEMBERS
+   Uses 3 working models with 4 distinct personalities:
+   • GPT OSS 120B (deep reasoning) — 2 different prompts
+   • GPT OSS 20B  (fast core)
+   • Qwen 3 32B   (structured logic)
+   ═══════════════════════════════════════════════════════════ */
 const COUNCIL_MODELS = [
   {
     id: 'openai/gpt-oss-120b',
     name: 'Master Reasoning',
     short: 'Master',
     icon: '🧠',
-    role: 'Deep logical analysis and comprehensive reasoning'
+    role: 'Deep logical analysis and comprehensive reasoning',
+    systemPrompt: `You are the MASTER REASONING member of the Anu Council.
+
+YOUR STRENGTH: Deep, thorough analysis with attention to nuance and complexity.
+
+APPROACH:
+- Analyze the question from multiple angles
+- Consider edge cases and contradictions
+- Provide comprehensive reasoning
+- Be precise and detailed
+- Match the user's language (Amharic → Amharic, English → English)
+
+Give your BEST answer. Be thorough but not verbose. Use Markdown.`
   },
   {
     id: 'openai/gpt-oss-20b',
     name: 'Fast Core',
     short: 'Fast',
     icon: '⚡',
-    role: 'Quick, direct answers and practical solutions'
+    role: 'Quick, direct answers and practical solutions',
+    systemPrompt: `You are the FAST CORE member of the Anu Council.
+
+YOUR STRENGTH: Speed, directness, practical value.
+
+APPROACH:
+- Give the most DIRECT and USEFUL answer
+- Skip fluff and preamble
+- Focus on what actually works
+- Be concise but complete
+- Match the user's language (Amharic → Amharic, English → English)
+
+Give your BEST answer. Be practical, not theoretical. Use Markdown when helpful.`
   },
   {
-    id: 'qwen/qwen3.6-27b',
+    id: 'qwen/qwen3-32b',
     name: 'Logic Analyst',
     short: 'Logic',
     icon: '📊',
-    role: 'Structured thinking and step-by-step analysis'
+    role: 'Structured thinking and step-by-step analysis',
+    systemPrompt: `You are the LOGIC ANALYST member of the Anu Council.
+
+YOUR STRENGTH: Structured, step-by-step, logical decomposition.
+
+APPROACH:
+- Break the problem into clear steps
+- Use numbered lists and structured format
+- Show your reasoning process
+- Verify your logic before answering
+- Match the user's language (Amharic → Amharic, English → English)
+
+Give your BEST answer. Be systematic and clear. Use Markdown with headings/lists.`
   },
   {
-    id: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    id: 'openai/gpt-oss-120b',
     name: 'Vision Scout',
     short: 'Scout',
     icon: '🌐',
-    role: 'Broad knowledge and creative perspectives'
+    role: 'Broad knowledge and creative perspectives',
+    systemPrompt: `You are the VISION SCOUT member of the Anu Council.
+
+YOUR STRENGTH: Creative thinking, alternative perspectives, out-of-the-box ideas.
+
+APPROACH:
+- Explore unconventional angles
+- Bring in analogies and examples
+- Consider long-term or big-picture implications
+- Offer creative alternatives
+- Match the user's language (Amharic → Amharic, English → English)
+
+Give your BEST answer. Be insightful and creative but still accurate. Use Markdown.`
   }
 ];
 
 const COORDINATOR_MODEL = 'openai/gpt-oss-120b';
 
-const COUNCIL_SYSTEM_PROMPT = `You are a member of the Anu Council — a multi-AI system.
-Your job: Provide your BEST possible answer to the user's question.
-Be:
-- Accurate and thoughtful
-- Concise but complete
-- Honest about uncertainties
-- Match the user's language (Amharic → Amharic, English → English)
-- Format with Markdown when helpful`;
-
+/* ─── Coordinator prompt ─── */
 const COORDINATOR_PROMPT = `You are the Anu Council Coordinator — the final synthesizer.
 
-Multiple AI models have each answered the SAME question. Your task: produce ONE unified, superior answer.
+Multiple AI members have each answered the SAME question from different angles. Your task: produce ONE unified, superior answer.
 
 RULES:
 1. Combine the STRONGEST points from all responses
@@ -57,18 +105,22 @@ RULES:
 3. Remove redundancy and repetition
 4. Structure clearly with Markdown (headings, bullets, code)
 5. Be DIRECT — no meta-commentary like "based on the responses..."
-6. Match the user's language
+6. Match the user's language (Amharic → Amharic, English → English)
 7. If models disagree, present the most likely correct answer with brief alternative if relevant
 8. Length: comprehensive but not bloated
 
-Output ONLY the final answer — nothing about the process.`;
+CRITICAL: Output ONLY the final answer — nothing about the council process, no mentions of "models said", no meta-commentary. Just the answer the user needs.`;
 
-/* ─── Call a single AI model ─── */
+/* ═══════════════════════════════════════════════════════════
+   SINGLE MODEL CALL
+   ═══════════════════════════════════════════════════════════ */
 async function callModel(modelId, systemPrompt, userMessage, options = {}) {
   const key = process.env.GROQ_API_KEY;
   const maxTokens = options.maxTokens || 1200;
   const temperature = options.temperature ?? 0.7;
   const timeoutMs = options.timeoutMs || 8000;
+
+  if (!key) return { ok: false, error: 'API key not set' };
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -96,7 +148,12 @@ async function callModel(modelId, systemPrompt, userMessage, options = {}) {
 
     if (!r.ok) {
       const errText = await r.text();
-      return { ok: false, error: `HTTP ${r.status}`, detail: errText.slice(0, 200) };
+      let reason = `HTTP ${r.status}`;
+      try {
+        const parsed = JSON.parse(errText);
+        if (parsed.error?.message) reason = parsed.error.message;
+      } catch (e) {}
+      return { ok: false, error: reason, status: r.status };
     }
 
     const data = await r.json();
@@ -111,7 +168,9 @@ async function callModel(modelId, systemPrompt, userMessage, options = {}) {
   }
 }
 
-/* ─── Main Handler ─── */
+/* ═══════════════════════════════════════════════════════════
+   MAIN HANDLER
+   ═══════════════════════════════════════════════════════════ */
 export default async function handler(req, res) {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -119,14 +178,18 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
+
   if (req.method === 'GET') {
     return res.status(200).json({
-      status: 'Anu Council is running',
-      models: COUNCIL_MODELS.map(m => m.name),
-      coordinator: 'Master Reasoning'
+      status: 'Anu Council v2 is running',
+      models: COUNCIL_MODELS.map(m => ({ name: m.name, id: m.id })),
+      coordinator: COORDINATOR_MODEL
     });
   }
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
   const GROQ_KEY = process.env.GROQ_API_KEY;
   if (!GROQ_KEY) {
@@ -141,7 +204,7 @@ export default async function handler(req, res) {
   const userQuestion = question.trim().slice(0, 4000);
   const startTime = Date.now();
 
-  console.log('[Council] Question:', userQuestion.slice(0, 80));
+  console.log('[Council] Q:', userQuestion.slice(0, 80));
   console.log('[Council] Launching', COUNCIL_MODELS.length, 'AIs in parallel');
 
   /* ═══════════════════════════════════════
@@ -153,15 +216,19 @@ export default async function handler(req, res) {
     const t0 = Date.now();
     const result = await callModel(
       model.id,
-      COUNCIL_SYSTEM_PROMPT,
+      model.systemPrompt,
       userQuestion,
       { maxTokens: 900, temperature: 0.7, timeoutMs: 8000 }
     );
     const elapsed = Date.now() - t0;
-    console.log(`[Council] ${model.name}: ${result.ok ? 'OK' : 'FAIL'} (${elapsed}ms)`);
+    console.log(`[Council] ${model.name} (${model.id}): ${result.ok ? 'OK' : 'FAIL: ' + result.error} (${elapsed}ms)`);
 
     return {
-      ...model,
+      id: model.id,
+      name: model.name,
+      short: model.short,
+      icon: model.icon,
+      role: model.role,
       response: result.ok ? result.content : null,
       error: result.ok ? null : result.error,
       elapsed,
@@ -179,9 +246,9 @@ export default async function handler(req, res) {
     return res.status(200).json({
       question: userQuestion,
       responses: councilResults,
-      finalAnswer: '⚠️ All council members failed to respond. Please try again.',
+      finalAnswer: '⚠️ All council members failed. Please check Vercel logs and try again.',
       error: 'no_valid_responses',
-      timing: { phase1: phase1Time, total: Date.now() - startTime }
+      timing: { phase1: phase1Time, phase2: 0, total: Date.now() - startTime }
     });
   }
 
@@ -194,15 +261,15 @@ export default async function handler(req, res) {
 ${userQuestion}
 
 ═══════════════════════════════════════
-COUNCIL RESPONSES (${validResponses.length} models):
+COUNCIL RESPONSES (${validResponses.length} members):
 ═══════════════════════════════════════
-${validResponses.map((r, i) => `
-─── ${r.icon} ${r.name} (${r.short}) ───
+${validResponses.map((r) => `
+─── ${r.icon} ${r.name} ───
 ${r.response}
 `).join('\n')}
 
 ═══════════════════════════════════════
-Now synthesize ONE unified, superior answer to the question.`; 
+Now synthesize ONE unified, superior answer to the question. Output ONLY the final answer.`;
 
   const synthesisResult = await callModel(
     COORDINATOR_MODEL,
@@ -218,9 +285,8 @@ Now synthesize ONE unified, superior answer to the question.`;
     finalAnswer = synthesisResult.content;
     console.log('[Council] Synthesis OK in', phase2Time, 'ms');
   } else {
-    // Fallback: use the best single response
     finalAnswer = validResponses[0].response;
-    console.warn('[Council] Synthesis failed, using fallback');
+    console.warn('[Council] Synthesis failed:', synthesisResult.error, '→ using fallback');
   }
 
   const totalTime = Date.now() - startTime;
