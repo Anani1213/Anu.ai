@@ -1,6 +1,7 @@
 {
   "version": 2,
   "rewrites": [
+    { "source": "/council", "destination": "/council.html" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
