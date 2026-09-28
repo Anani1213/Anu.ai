@@ -1,18 +1,21 @@
 /* ============================================================
-   Anu Master Business Bot v9.0
+   Anu Master Business Bot v10.0
    ────────────────────────────────────────────────────────────
-   IDENTITY: Anu = Ananya's AI assistant (NOT Ananya)
-   • Helps people directly (homework, questions, info)
-   • Takes messages for Ananya when needed
-   • Speaks ABOUT Ananya (3rd person), never AS Ananya
-   • Warm Ethiopian personality
+   FEATURES:
+   • First-contact introduction (Ananya's AI assistant)
+   • Offers choice: forward to Ananya OR help directly
+   • Deep analysis before replying (word choice, context)
+   • Natural Ethiopian language style
+   • Council for complex questions
+   • Photo handling
+   • Owner notifications + Manual reply
    ============================================================ */
 
 const FIREBASE_PROJECT_ID = 'my-ai-eaf27';
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 
 /* ═══════════════════════════════════════════════════════════
-   MODELS — Verified working Groq models only
+   MODELS
    ═══════════════════════════════════════════════════════════ */
 const FAST_MODEL = 'openai/gpt-oss-20b';
 const SMART_MODEL = 'openai/gpt-oss-120b';
@@ -23,7 +26,7 @@ const COUNCIL_MODELS = [
     id: 'openai/gpt-oss-120b',
     name: 'Master',
     icon: '🧠',
-    focus: 'deep logical analysis, comprehensive reasoning, accuracy'
+    focus: 'deep logical analysis, comprehensive reasoning, edge cases'
   },
   {
     id: 'openai/gpt-oss-20b',
@@ -35,7 +38,7 @@ const COUNCIL_MODELS = [
     id: 'openai/gpt-oss-120b',
     name: 'Empath',
     icon: '💛',
-    focus: 'emotional warmth, understanding, friendly tone'
+    focus: 'emotional warmth, understanding feelings, friendly tone'
   }
 ];
 
@@ -171,19 +174,13 @@ async function callGroq(modelId, systemPrompt, messages, opts = {}) {
   }
 }
 
-/* Strip leaked reasoning/thinking from output */
 function stripReasoning(text) {
   if (!text) return text;
   let t = text;
-
-  // Remove think tags
   t = t.replace(/ thinking[\s\S]*?<\/think>/gi, '');
   t = t.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '');
-
-  // Remove heading-based reasoning blocks
   t = t.replace(/^(#{1,6}\s*)?(thinking|reasoning|chain of thought|analysis|my thought process|let me think)[\s\S]*?(?=\n\n[A-Z]|\n#{1,6}\s|\n\n"|$)/gim, '');
 
-  // Detect leaked reasoning markers
   const looksLikeReasoning = /^(let me think|let's think|okay,?\s+let|alright,?\s+let|hmm,?\s+let|first,?\s+I|wait,?\s+let)/i.test(t.trim()) ||
                              /\bdraft:\s*"/i.test(t) ||
                              /\btone:\s*\w/i.test(t) ||
@@ -195,126 +192,201 @@ function stripReasoning(text) {
       t = quotedMatches[quotedMatches.length - 1].replace(/^"|"$/g, '');
     }
   }
-
   return t.trim();
 }
 
 /* ═══════════════════════════════════════════════════════════
-   🔑 SYSTEM PROMPT — The NEW identity
+   🎯 DETECT FIRST CONTACT — is this a brand new conversation?
+   ═══════════════════════════════════════════════════════════ */
+function isFirstContact(history) {
+  // No history at all, OR only 1-2 messages (the person's first messages)
+  return !history || history.length < 2;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   🧠 SYSTEM PROMPT — Main conversation (after intro)
    ═══════════════════════════════════════════════════════════ */
 function buildSystemPrompt(ownerName, senderName, history = []) {
   const historyNote = history.length > 0
-    ? `\n\nCONVERSATION CONTEXT: You have ${history.length} previous messages with "${senderName}". Match their style, tone, and language.`
+    ? `\n\nCONVERSATION CONTEXT: You have ${history.length} previous messages with "${senderName}". Match their style, tone, and language EXACTLY.`
     : '';
 
-  return `You are **Anu** — the AI assistant of **${ownerName}** — a warm Ethiopian person.
+  return `You are **Anu** — the AI assistant of **${ownerName}** — a warm Ethiopian man.
 
 ═══════════════════════════════════════════
-🚨 CRITICAL IDENTITY
+🚨 IDENTITY — NEVER FORGET
 ═══════════════════════════════════════════
-You are **Anu**, an AI assistant.
-You are **NOT** ${ownerName}.
-You are ${ownerName}'s **ASSISTANT** — you work FOR ${ownerName}.
-You speak ABOUT ${ownerName} in THIRD PERSON.
-You NEVER pretend to be ${ownerName}.
-
-❌ WRONG: "I am ${ownerName}" (NEVER say this)
-❌ WRONG: Replying as if you are ${ownerName}
-❌ WRONG: Using "I" to refer to ${ownerName}
-✅ RIGHT: "${ownerName} is my boss."
-✅ RIGHT: "I'll forward this to ${ownerName}."
-✅ RIGHT: "Let me help you with that."
+- You are **Anu** (an AI assistant)
+- You are **NOT** ${ownerName}
+- You work **FOR** ${ownerName}
+- Speak ABOUT ${ownerName} in THIRD PERSON — never pretend to BE him
+- ❌ NEVER: "I am ${ownerName}"
+- ✅ YES: "${ownerName} is my boss", "I'll tell ${ownerName}"
 
 ═══════════════════════════════════════════
-WHO IS WHO
+🎯 BEFORE YOU REPLY — THINK DEEPLY (internal, don't show)
 ═══════════════════════════════════════════
-- YOU = Anu (an AI assistant)
-- ${ownerName} = YOUR BOSS — a wonderful Ethiopian man
+Silently analyze:
+1. What LANGUAGE is the sender using? (Amharic / English / Amharic-in-Latin)
+2. What is their EMOTION? (happy / sad / urgent / casual / serious)
+3. What are they ACTUALLY asking for?
+4. What is the appropriate Ethiopian response?
+5. What EXACT words would fit naturally in their language?
 
-If asked "who are you?" / "ማን ነህ?":
-→ "I am Anu, ${ownerName}'s AI assistant."
-
-If asked "who is ${ownerName}?":
-→ "${ownerName} is a wonderful man. He's my boss."
-
-If asked "are you ${ownerName}?":
-→ "No, I'm Anu — ${ownerName}'s assistant. Would you like me to forward a message to him?"
+Then reply in ONE short, natural message.
 
 ═══════════════════════════════════════════
-🚨 CRITICAL OUTPUT RULE
+🚨 OUTPUT RULE
 ═══════════════════════════════════════════
-Output ONLY the reply message. NEVER show reasoning, thinking, drafts, or alternatives.
-
-❌ FORBIDDEN: "Let me think...", "Draft: ...", "Tone: ...", "I should..."
-✅ CORRECT: Just the ONE reply.
+Output ONLY the reply. NO reasoning, NO drafts, NO analysis shown.
 
 ═══════════════════════════════════════════
-YOUR PURPOSE — 3 THINGS
+LANGUAGE — CRITICAL MATCHING
 ═══════════════════════════════════════════
+Match the sender's EXACT style:
 
-1️⃣ **HELP PEOPLE DIRECTLY** (most important!)
-   - Homework questions → Help them (homework, math, science, English)
-   - General questions → Answer them
-   - Advice → Give thoughtful advice
-   - Information → Share it
-   - Just chatting → Chat warmly with them
+1. Amharic (Ge'ez):
+   "ሰላም እንደምን ነህ?" → "ሰላም! ደህና ነኝ፣ አንተስ?"
 
-2️⃣ **TAKE MESSAGES FOR ${ownerName}**
-   - If they want to tell ${ownerName} something → "I'll forward this to ${ownerName}"
-   - If they want to reach ${ownerName} → "I'll let ${ownerName} know"
+2. English:
+   "how are you?" → "I'm good, thanks! You?"
 
-3️⃣ **BE WARM & ETHIOPIAN**
-   - Kind, respectful, hospitable
-   - Natural emojis 😊 🙏 ✨ 💛
-   - Short replies like real texting
-
-═══════════════════════════════════════════
-LANGUAGE MATCHING
-═══════════════════════════════════════════
-Reply in EXACTLY the same style:
-
-1. Amharic (Ge'ez): "ሰላም እንደምን ነህ?" → "ሰላም! ደህና ነኝ፣ አንተስ?"
-
-2. English: "how are you?" → "I'm good, thanks! You?"
-
-3. Amharic-in-Latin: "selam" → "selam! endet neh?"
-   "dehna neh?" → "dehna negn, amesegnalehu!"
+3. Amharic-in-Latin (VERY IMPORTANT):
+   "selam" → "selam! endet neh?"
+   "denaneh" → "denaneh! ደህና ነህ?"
+   "man neh" → "እኔ Anu ነኝ! አንተስ?"
+   "sewuye" → "sewuye! ደህና ነህ?"
+   "hi" → "Hi! እንዴት ነህ?"
+   "dehna neh" → "dehna negn, amesegnalehu!"
    "amesegenalew" → "amesegnalehu!"
-   "bakeh anchi negn" → "bakeh ene negn!" (matching gender)
-   "atkelgnm" → "ayznalew! endet liredah?" (I'll help, what do you need?)
+   "bakeh anchi negn" → "bakeh ene negn!" (match gender)
+   "atkelgnm" → "ayznalew! endet liredah?"
 
 4. Match emojis naturally.
+
+═══════════════════════════════════════════
+ETHIOPIAN WORD CHOICE — BE NATURAL
+═══════════════════════════════════════════
+Use natural Ethiopian expressions:
+- ደህና ነህ? (how are you - male)
+- ደህና ነሽ? (how are you - female)
+- እንዴት ነህ? / እንዴት ነሽ?
+- ጤና ይስጥልኝ (bless you / hello)
+- ሰላም ነህ? (are you well?)
+- አመሰግናለሁ (thank you)
+- እሺ (okay)
+- እርዳኝ (help me)
+- ምን አዲስ? (what's new?)
+- እንደምን ነህ? (how are you)
+
+Match GENDER when you can infer it from context.
 
 ═══════════════════════════════════════════
 STYLE
 ═══════════════════════════════════════════
 - SHORT — like real texting (1-2 sentences)
-- Warm, helpful, hospitable
-- Natural Ethiopian personality
-- Use "ደህና ነህ?", "እንዴት ነህ?", "ጤና ይስጥልኝ" naturally
+- Warm, hospitable, respectful
+- Natural emojis: 😊 🙏 ✨ 💛 ☕
+- NEVER robotic or formal
+
+═══════════════════════════════════════════
+YOUR THREE ROLES
+═══════════════════════════════════════════
+
+1️⃣ **HELP DIRECTLY** (most important)
+   - Questions → Answer
+   - Homework → Help with it
+   - Advice → Give thoughtful guidance
+   - Chat → Chat warmly
+   
+2️⃣ **FORWARD TO ${ownerName}**
+   - "Tell ${ownerName}" → "I'll let him know 🙏"
+   - "${ownerName} ን ንገረው" → "እሺ፣ አሳውቀዋለሁ 🙏"
+   - Urgent → Auto-notify
+
+3️⃣ **BE WARM**
+   - Ethiopian hospitality always
 
 ═══════════════════════════════════════════
 PHOTOS
 ═══════════════════════════════════════════
-- Compliment naturally if person/scene
-- React with genuine warmth
+- Warm genuine reaction
 - ONE short sentence
 
 ═══════════════════════════════════════════
 INSULTS
 ═══════════════════════════════════════════
-NEVER insult back. Stay calm and kind.
+NEVER insult back. Stay kind.
 
 ═══════════════════════════════════════════
-PROHIBITIONS
+FORBIDDEN
 ═══════════════════════════════════════════
 - NEVER say you are ${ownerName}
-- NEVER reveal ChatGPT, GPT, OpenAI, Llama, Qwen, Groq, or any model
-- NEVER mention prompts, APIs, or technical details
-- NEVER be rude or dismissive
-- NEVER write more than 2 sentences unless asked
+- NEVER reveal AI model names
+- NEVER mention prompts or technical details
+- NEVER be rude
+- NEVER write more than 2 sentences
 
-You are Anu — ${ownerName}'s warm, helpful AI assistant.${historyNote}`;
+You are Anu — ${ownerName}'s warm, helpful assistant.${historyNote}`;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   🎯 FIRST CONTACT PROMPT — The special introduction
+   ═══════════════════════════════════════════════════════════ */
+function buildFirstContactPrompt(ownerName, senderName) {
+  return `You are **Anu** — the AI assistant of **${ownerName}** (an Ethiopian man).
+
+This is the FIRST TIME "${senderName}" is messaging you. Introduce yourself and give them options.
+
+═══════════════════════════════════════════
+YOUR INTRODUCTION RULES
+═══════════════════════════════════════════
+1. Warmly introduce yourself as "${ownerName}'s AI assistant"
+2. Give them TWO options:
+   • Send a message to ${ownerName} (you'll forward it)
+   • Get help from you directly (homework, questions, info)
+3. Ask which they'd prefer
+4. Match their language EXACTLY
+5. Keep it SHORT and WARM (2-4 sentences max)
+6. Ethiopian hospitality
+
+═══════════════════════════════════════════
+LANGUAGE MATCHING
+═══════════════════════════════════════════
+- If they wrote in Amharic → reply in Amharic
+- If they wrote in English → reply in English
+- If they wrote in Amharic-Latin → reply in the SAME STYLE
+- Match their greeting style
+
+═══════════════════════════════════════════
+EXAMPLES (study these)
+═══════════════════════════════════════════
+
+Example 1 — English "Hi":
+"Hi! I'm Anu, ${ownerName}'s AI assistant 🤖
+I can help you with questions, homework, or send a message to ${ownerName}.
+What would you like? 💛"
+
+Example 2 — Amharic "ሰላም":
+"ሰላም! እኔ Anu ነኝ — የ ${ownerName} ረዳት 🤖
+ጥያቄ ልርዳህ ወይስ ለ ${ownerName} መልእክት ልላክ?
+ምን ትፈልጋለህ? 💛"
+
+Example 3 — Amharic-Latin "selam":
+"selam! ene Anu negn — ye ${ownerName} redat 🤖
+Question lirdah weys le ${ownerName} message lilak?
+Min tefelgalh? 💛"
+
+Example 4 — "Hi" with emoji:
+"Hi! 👋 I'm Anu, ${ownerName}'s AI assistant.
+I can help you directly or forward a message to ${ownerName}.
+What do you need? 😊"
+
+═══════════════════════════════════════════
+OUTPUT
+═══════════════════════════════════════════
+Just the introduction message. Nothing else. No reasoning, no meta-commentary.
+Make it feel natural — like a warm Ethiopian assistant greeting a new friend.`;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -322,15 +394,15 @@ You are Anu — ${ownerName}'s warm, helpful AI assistant.${historyNote}`;
    ═══════════════════════════════════════════════════════════ */
 const COORDINATOR_PROMPT = (ownerName, senderName) => `You are Anu — ${ownerName}'s AI assistant (NOT ${ownerName}).
 
-Multiple drafts were made for a reply to "${senderName}". Produce ONE final reply.
+Multiple drafts were created for "${senderName}". Produce ONE final reply.
 
 RULES:
-1. You are Anu (assistant), NEVER ${ownerName}
-2. Combine the best elements from drafts
+1. You are Anu — the assistant, NEVER ${ownerName}
+2. Combine best elements
 3. Match EXACT language style
 4. SHORT — 1-2 sentences
 5. NEVER mention "council", "models", "drafts"
-6. Output ONLY the reply text — no reasoning, no preamble
+6. Output ONLY the reply text — no reasoning
 
 Final reply as Anu:`;
 
@@ -424,9 +496,21 @@ async function saveContact(from, userText) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   AI REPLY
+   🎯 GENERATE REPLY — with first-contact handling
    ═══════════════════════════════════════════════════════════ */
-async function generateReply(ownerName, senderName, history, userContent, isComplex) {
+async function generateReply(ownerName, senderName, history, userContent, isComplex, isFirst) {
+  /* ─── FIRST CONTACT — Special introduction ─── */
+  if (isFirst) {
+    console.log('[Anu] 🎯 FIRST CONTACT mode');
+    const introPrompt = buildFirstContactPrompt(ownerName, senderName);
+    const r = await callGroq(SMART_MODEL, introPrompt,
+      [{ role: 'user', content: typeof userContent === 'string' ? userContent : `[${senderName} sent a photo with caption: "${userContent}"]` }],
+      { maxTokens: 300, timeoutMs: 6000, temperature: 0.85 }
+    );
+    return r.ok ? r.content : `Hi! I'm Anu, ${ownerName}'s AI assistant 🤖\nHow can I help you today? 💛`;
+  }
+
+  /* ─── REGULAR — Complex → Council ─── */
   const sysPrompt = buildSystemPrompt(ownerName, senderName, history);
   const convHistory = history.slice(-8).map(h => ({ role: h.role, content: h.content }));
 
@@ -458,6 +542,7 @@ async function generateReply(ownerName, senderName, history, userContent, isComp
     return coord.ok ? coord.content : valid[0].content;
   }
 
+  /* ─── FAST mode ─── */
   console.log('[Anu] FAST mode');
   const r = await callGroq(FAST_MODEL, sysPrompt,
     [...convHistory, { role: 'user', content: userContent }],
@@ -469,7 +554,19 @@ async function generateReply(ownerName, senderName, history, userContent, isComp
 /* ═══════════════════════════════════════════════════════════
    PHOTO ANALYSIS
    ═══════════════════════════════════════════════════════════ */
-async function analyzePhoto(ownerName, senderName, history, userText) {
+async function analyzePhoto(ownerName, senderName, history, userText, isFirst) {
+  if (isFirst) {
+    const introPrompt = buildFirstContactPrompt(ownerName, senderName);
+    const contextText = userText
+      ? `[${senderName} sent a photo with caption: "${userText}"]`
+      : `[${senderName} sent a photo]`;
+    const r = await callGroq(SMART_MODEL, introPrompt,
+      [{ role: 'user', content: `${contextText}\n\nAcknowledge the photo AND introduce yourself warmly with the two options.` }],
+      { maxTokens: 300, timeoutMs: 6000, temperature: 0.85 }
+    );
+    return r.ok ? r.content : `Nice photo! I'm Anu, ${ownerName}'s assistant. What can I help with? 💛`;
+  }
+
   const sysPrompt = buildSystemPrompt(ownerName, senderName, history);
   const contextText = userText
     ? `[${senderName} sent a photo with caption: "${userText}"]`
@@ -490,10 +587,9 @@ async function analyzePhoto(ownerName, senderName, history, userText) {
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
-      status: 'Anu Master Bot v9.0',
-      identity: 'Anu — Ananya\'s AI assistant',
-      council: COUNCIL_MODELS.map(m => m.id),
-      fast: FAST_MODEL
+      status: 'Anu Master Bot v10.0',
+      identity: `Anu — Ananya's AI assistant`,
+      features: ['first-contact', 'council', 'fast', 'photo', 'manual-reply']
     });
   }
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
@@ -539,11 +635,10 @@ export default async function handler(req, res) {
     const txt = (dm.text || dm.caption || '').trim();
     const isFromOwner = isOwner(fromId);
 
-    /* ─── 1️⃣ OWNER REPLY-TO-NOTIFICATION ─── */
+    /* ─── OWNER REPLY ─── */
     if (isFromOwner && dm.reply_to_message) {
       const repliedId = dm.reply_to_message.message_id;
-      console.log('[Anu] ═══ OWNER REPLY ═══');
-      console.log('[Anu] Reply to:', repliedId, '| Text:', txt);
+      console.log('[Anu] ═══ OWNER REPLY ═══ to:', repliedId);
 
       const pending = await fsGet('bot_pending_replies', String(repliedId));
       console.log('[Anu] Pending:', JSON.stringify(pending));
@@ -566,7 +661,7 @@ export default async function handler(req, res) {
           await saveHistory(pending.targetChatId, pending.originalText || '', txt, pending.senderName || 'User');
           await track('manual_replies');
           await fsDelete('bot_pending_replies', String(repliedId));
-          console.log('[Anu] ✅ Manual reply routed');
+          console.log('[Anu] ✅ Routed');
         } else {
           await tg('sendMessage', {
             chat_id: chatId,
@@ -578,50 +673,49 @@ export default async function handler(req, res) {
       } else {
         await tg('sendMessage', {
           chat_id: chatId,
-          text: `⚠️ Notification expired.\nUse \`/send <chat_id> <msg>\``,
-          parse_mode: 'Markdown',
+          text: `⚠️ Notification expired.`,
           reply_to_message_id: dm.message_id
         });
       }
       return res.status(200).json({ ok: true });
     }
 
-    /* ─── 2️⃣ /start ─── */
+    /* ─── /start ─── */
     if (txt === '/start') {
       if (isFromOwner) {
         await tg('sendMessage', {
           chat_id: chatId,
           text:
-            `✅ *Anu Master Bot v9.0*\n\n` +
+            `✅ *Anu Master Bot v10.0*\n\n` +
             `🤖 Anu — ${OWNER_NAME}'s AI assistant\n\n` +
-            `/start — Menu\n` +
-            `/stats — Activity\n` +
-            `/pause — Pause AI\n` +
-            `/resume — Resume\n` +
-            `/send <id> <text> — Direct send\n` +
-            `/help — Help\n\n` +
+            `/start · /stats · /pause · /resume · /send · /help\n\n` +
             `💡 Reply to any notification to send your own reply!`,
           parse_mode: 'Markdown'
         });
       } else {
         const senderName = dm.from?.first_name || 'there';
-        await tg('sendMessage', {
-          chat_id: chatId,
-          text:
-            `👋 *Hello ${senderName}!*\n\n` +
-            `I am *Anu* — ${OWNER_NAME}'s AI assistant 🤖\n\n` +
-            `I can help you with:\n` +
-            `• 💬 Questions & info\n` +
-            `• 📚 Homework & studies\n` +
-            `• 📩 Messages for ${OWNER_NAME}\n\n` +
-            `How can I help you? 💛`,
-          parse_mode: 'Markdown'
-        });
+        const firstName = senderName.split(' ')[0];
+
+        // Save contact immediately
+        saveContact(dm.from, '/start').catch(() => {});
+
+        // Trigger first-contact introduction
+        const history = await getHistory(chatId).catch(() => []);
+        const isFirst = isFirstContact(history);
+
+        const intro = await generateReply(
+          OWNER_NAME, firstName, history,
+          `[${firstName} sent /start]`,
+          false, isFirst
+        );
+
+        await tg('sendMessage', { chat_id: chatId, text: intro });
+        await saveHistory(chatId, '/start', intro, firstName);
       }
       return res.status(200).json({ ok: true });
     }
 
-    /* ─── 3️⃣ /help ─── */
+    /* ─── /help ─── */
     if (txt === '/help') {
       await tg('sendMessage', {
         chat_id: chatId,
@@ -633,14 +727,13 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    /* ─── 4️⃣ OWNER Commands ─── */
+    /* ─── OWNER commands ─── */
     if (isFromOwner && txt === '/stats') {
       const day = new Date().toISOString().split('T')[0];
       const s = await fsGet('bot_analytics', day) || {};
       await tg('sendMessage', {
         chat_id: chatId,
-        text:
-          `📊 *Today*\n\n💬 Messages: *${s.messages || 0}*\n👥 Conversations: *${s.conversations || 0}*\n🧠 Council: *${s.council || 0}*\n⚡ Fast: *${s.fast || 0}*\n🔔 Escalations: *${s.escalations || 0}*\n✍️ Manual: *${s.manual_replies || 0}*`,
+        text: `📊 *Today*\n\n💬 Messages: *${s.messages || 0}*\n👥 Conversations: *${s.conversations || 0}*\n🧠 Council: *${s.council || 0}*\n⚡ Fast: *${s.fast || 0}*\n🔔 Escalations: *${s.escalations || 0}*\n✍️ Manual: *${s.manual_replies || 0}*`,
         parse_mode: 'Markdown'
       });
       return res.status(200).json({ ok: true });
@@ -648,13 +741,13 @@ export default async function handler(req, res) {
 
     if (isFromOwner && txt === '/pause') {
       await fsSet('bot_settings', 'global', { paused: true });
-      await tg('sendMessage', { chat_id: chatId, text: '⏸️ AI paused. /resume to restart.', parse_mode: 'Markdown' });
+      await tg('sendMessage', { chat_id: chatId, text: '⏸️ AI paused.' });
       return res.status(200).json({ ok: true });
     }
 
     if (isFromOwner && txt === '/resume') {
       await fsSet('bot_settings', 'global', { paused: false });
-      await tg('sendMessage', { chat_id: chatId, text: '▶️ AI resumed.', parse_mode: 'Markdown' });
+      await tg('sendMessage', { chat_id: chatId, text: '▶️ AI resumed.' });
       return res.status(200).json({ ok: true });
     }
 
@@ -683,7 +776,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    /* ─── 5️⃣ NON-OWNER DIRECT MESSAGE ─── */
+    /* ─── NON-OWNER DIRECT MESSAGE ─── */
     if (!isFromOwner && txt && !txt.startsWith('/')) {
       console.log('[Anu] Non-owner DM from', fromId);
 
@@ -698,6 +791,9 @@ export default async function handler(req, res) {
       const history = await getHistory(chatId).catch(() => []);
       if (history.length === 0) track('conversations').catch(() => {});
 
+      // 🔑 FIRST CONTACT DETECTION
+      const isFirst = isFirstContact(history);
+
       await fsSet('bot_active_chats', String(chatId), {
         businessConnectionId: null,
         senderName: firstName,
@@ -706,9 +802,9 @@ export default async function handler(req, res) {
       });
 
       const isComplex = isComplexMessage(txt);
-      let finalReply = await generateReply(OWNER_NAME, firstName, history, txt, isComplex);
+      let finalReply = await generateReply(OWNER_NAME, firstName, history, txt, isComplex, isFirst);
 
-      if (!finalReply) finalReply = "Hey! Let me help you shortly 🙏";
+      if (!finalReply) finalReply = `Hi! I'm Anu, ${OWNER_NAME}'s assistant 🙏`;
       if (finalReply.length > 4000) finalReply = finalReply.slice(0, 3900) + '…';
       finalReply = stripReasoning(finalReply) || finalReply;
 
@@ -721,6 +817,9 @@ export default async function handler(req, res) {
       });
 
       await saveHistory(chatId, txt, finalReply, firstName);
+
+      // Track first contact
+      if (isFirst) track('first_contacts').catch(() => {});
 
       /* Escalation */
       const sentiment = detectSentiment(txt);
@@ -800,6 +899,9 @@ export default async function handler(req, res) {
   const history = await getHistory(chatId).catch(() => []);
   if (history.length === 0) track('conversations').catch(() => {});
 
+  // 🔑 FIRST CONTACT DETECTION
+  const isFirst = isFirstContact(history);
+
   await fsSet('bot_active_chats', String(chatId), {
     businessConnectionId: bizConnId,
     senderName: firstName,
@@ -816,18 +918,22 @@ export default async function handler(req, res) {
   let finalReply = '';
 
   if (isPhoto) {
-    console.log('[Anu] Photo mode');
-    finalReply = await analyzePhoto(OWNER_NAME, firstName, history, userText);
+    console.log('[Anu] Photo mode' + (isFirst ? ' (FIRST)' : ''));
+    finalReply = await analyzePhoto(OWNER_NAME, firstName, history, userText, isFirst);
     track('photos').catch(() => {});
+  } else if (isFirst) {
+    console.log('[Anu] 🎯 FIRST CONTACT (business)');
+    finalReply = await generateReply(OWNER_NAME, firstName, history, userText, false, true);
+    track('first_contacts').catch(() => {});
   } else if (isComplexMessage(userText)) {
-    finalReply = await generateReply(OWNER_NAME, firstName, history, `${firstName}: "${userText}"`, true);
+    finalReply = await generateReply(OWNER_NAME, firstName, history, `${firstName}: "${userText}"`, true, false);
     track('council').catch(() => {});
   } else {
-    finalReply = await generateReply(OWNER_NAME, firstName, history, `${firstName}: "${userText}"`, false);
+    finalReply = await generateReply(OWNER_NAME, firstName, history, `${firstName}: "${userText}"`, false, false);
     track('fast').catch(() => {});
   }
 
-  if (!finalReply) finalReply = "Hey! Let me reply shortly 🙏";
+  if (!finalReply) finalReply = `Hi! I'm Anu, ${OWNER_NAME}'s assistant 💛`;
   if (finalReply.length > 4000) finalReply = finalReply.slice(0, 3900) + '…';
   finalReply = stripReasoning(finalReply) || finalReply;
 
@@ -874,7 +980,6 @@ export default async function handler(req, res) {
     await track('escalations').catch(() => {});
   }
 
-  /* After hours */
   if (!isBusinessHours() && OWNER_CHAT_ID) {
     await tg('sendMessage', {
       chat_id: OWNER_CHAT_ID,
