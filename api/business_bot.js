@@ -1,20 +1,18 @@
 /* ============================================================
-   Anu Master Business Bot v8.0
+   Anu Master Business Bot v9.0
    ────────────────────────────────────────────────────────────
-   FIXES:
-   • Removed qwen3.8-27b (thinking mode leaked)
-   • Uses ONLY gpt-oss-120b + gpt-oss-20b
-   • Suppresses reasoning output
-   • Photo analysis with fallback
-   • Owner reply-to-notification
-   • Anyone can chat
+   IDENTITY: Anu = Ananya's AI assistant (NOT Ananya)
+   • Helps people directly (homework, questions, info)
+   • Takes messages for Ananya when needed
+   • Speaks ABOUT Ananya (3rd person), never AS Ananya
+   • Warm Ethiopian personality
    ============================================================ */
 
 const FIREBASE_PROJECT_ID = 'my-ai-eaf27';
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 
 /* ═══════════════════════════════════════════════════════════
-   MODELS — Only verified, non-thinking models
+   MODELS — Verified working Groq models only
    ═══════════════════════════════════════════════════════════ */
 const FAST_MODEL = 'openai/gpt-oss-20b';
 const SMART_MODEL = 'openai/gpt-oss-120b';
@@ -25,7 +23,7 @@ const COUNCIL_MODELS = [
     id: 'openai/gpt-oss-120b',
     name: 'Master',
     icon: '🧠',
-    focus: 'deep logical analysis, edge cases, comprehensive reasoning'
+    focus: 'deep logical analysis, comprehensive reasoning, accuracy'
   },
   {
     id: 'openai/gpt-oss-20b',
@@ -37,7 +35,7 @@ const COUNCIL_MODELS = [
     id: 'openai/gpt-oss-120b',
     name: 'Empath',
     icon: '💛',
-    focus: 'emotional intelligence, warmth, understanding feelings and context'
+    focus: 'emotional warmth, understanding, friendly tone'
   }
 ];
 
@@ -123,7 +121,7 @@ async function fsDelete(col, id) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   GROQ CALL — with reasoning suppression
+   GROQ CALL
    ═══════════════════════════════════════════════════════════ */
 async function callGroq(modelId, systemPrompt, messages, opts = {}) {
   const key = process.env.GROQ_API_KEY;
@@ -139,7 +137,6 @@ async function callGroq(modelId, systemPrompt, messages, opts = {}) {
       messages: [{ role: 'system', content: systemPrompt }, ...messages],
       temperature: opts.temperature ?? 0.75,
       max_tokens: opts.maxTokens || 500,
-      // Suppress internal reasoning output
       reasoning_effort: 'low'
     };
 
@@ -166,9 +163,7 @@ async function callGroq(modelId, systemPrompt, messages, opts = {}) {
     let content = data.choices?.[0]?.message?.content?.trim() || '';
     if (!content) return { ok: false, error: 'Empty' };
 
-    // Strip any leaked thinking tags or reasoning blocks
     content = stripReasoning(content);
-
     return { ok: true, content };
   } catch (e) {
     clearTimeout(tId);
@@ -176,39 +171,28 @@ async function callGroq(modelId, systemPrompt, messages, opts = {}) {
   }
 }
 
-/* Strip thinking/chain-of-thought leakage from model output */
+/* Strip leaked reasoning/thinking from output */
 function stripReasoning(text) {
   if (!text) return text;
   let t = text;
 
-  // Remove  thinking... blocks
+  // Remove think tags
   t = t.replace(/ thinking[\s\S]*?<\/think>/gi, '');
-
-  // Remove <reasoning>...</reasoning> blocks
   t = t.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '');
 
-  // Remove markdown-headed thinking sections
-  t = t.replace(/^(#{1,6}\s*)?(thinking|reasoning|chain of thought|analysis|my thought process)[\s\S]*?(?=\n\n[A-Z]|\n#{1,6}\s|\n\n"|$)/gim, '');
+  // Remove heading-based reasoning blocks
+  t = t.replace(/^(#{1,6}\s*)?(thinking|reasoning|chain of thought|analysis|my thought process|let me think)[\s\S]*?(?=\n\n[A-Z]|\n#{1,6}\s|\n\n"|$)/gim, '');
 
-  // Remove common reasoning starters (only if the message is long and clearly analysis)
-  const reasoningPatterns = [
-    /^(let me think|let's think|okay,?\s+let|alright,?\s+let|hmm,?\s+let|first,?\s+I|wait,?\s+let)/i,
-    /^(looking at|considering|analyzing|examining|based on|according to)/i
-  ];
-
-  // Only strip if the response looks like pure reasoning leakage
-  const looksLikeReasoning = reasoningPatterns.some(p => p.test(t.trim())) ||
+  // Detect leaked reasoning markers
+  const looksLikeReasoning = /^(let me think|let's think|okay,?\s+let|alright,?\s+let|hmm,?\s+let|first,?\s+I|wait,?\s+let)/i.test(t.trim()) ||
                              /\bdraft:\s*"/i.test(t) ||
                              /\btone:\s*\w/i.test(t) ||
                              /\blanguage:\s*\w/i.test(t);
 
   if (looksLikeReasoning && t.length > 500) {
-    // Try to extract just the final quoted reply
     const quotedMatches = t.match(/"([^"]{10,300})"/g);
     if (quotedMatches && quotedMatches.length > 0) {
-      // Take the last quoted string (usually the final reply)
-      const last = quotedMatches[quotedMatches.length - 1];
-      t = last.replace(/^"|"$/g, '');
+      t = quotedMatches[quotedMatches.length - 1].replace(/^"|"$/g, '');
     }
   }
 
@@ -216,40 +200,73 @@ function stripReasoning(text) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   SYSTEM PROMPT — Clean, no reasoning allowed
+   🔑 SYSTEM PROMPT — The NEW identity
    ═══════════════════════════════════════════════════════════ */
 function buildSystemPrompt(ownerName, senderName, history = []) {
   const historyNote = history.length > 0
-    ? `\n\nCONVERSATION CONTEXT: You have ${history.length} previous messages with "${senderName}". Match their style, tone, and language naturally.`
+    ? `\n\nCONVERSATION CONTEXT: You have ${history.length} previous messages with "${senderName}". Match their style, tone, and language.`
     : '';
 
-  return `You are **Anu**, the personal AI assistant of **${ownerName}** — a warm Ethiopian person.
+  return `You are **Anu** — the AI assistant of **${ownerName}** — a warm Ethiopian person.
+
+═══════════════════════════════════════════
+🚨 CRITICAL IDENTITY
+═══════════════════════════════════════════
+You are **Anu**, an AI assistant.
+You are **NOT** ${ownerName}.
+You are ${ownerName}'s **ASSISTANT** — you work FOR ${ownerName}.
+You speak ABOUT ${ownerName} in THIRD PERSON.
+You NEVER pretend to be ${ownerName}.
+
+❌ WRONG: "I am ${ownerName}" (NEVER say this)
+❌ WRONG: Replying as if you are ${ownerName}
+❌ WRONG: Using "I" to refer to ${ownerName}
+✅ RIGHT: "${ownerName} is my boss."
+✅ RIGHT: "I'll forward this to ${ownerName}."
+✅ RIGHT: "Let me help you with that."
+
+═══════════════════════════════════════════
+WHO IS WHO
+═══════════════════════════════════════════
+- YOU = Anu (an AI assistant)
+- ${ownerName} = YOUR BOSS — a wonderful Ethiopian man
+
+If asked "who are you?" / "ማን ነህ?":
+→ "I am Anu, ${ownerName}'s AI assistant."
+
+If asked "who is ${ownerName}?":
+→ "${ownerName} is a wonderful man. He's my boss."
+
+If asked "are you ${ownerName}?":
+→ "No, I'm Anu — ${ownerName}'s assistant. Would you like me to forward a message to him?"
 
 ═══════════════════════════════════════════
 🚨 CRITICAL OUTPUT RULE
 ═══════════════════════════════════════════
-Output ONLY the reply message. NEVER show your reasoning, thinking, analysis, drafts, or alternatives.
+Output ONLY the reply message. NEVER show reasoning, thinking, drafts, or alternatives.
 
-❌ FORBIDDEN to output:
-- "Let me think..."
-- "Draft: ..."
-- "Tone: ..."
-- "Language: ..."
-- "I should..."
-- "Looking at the previous..."
-- Multiple options
-- Internal analysis
-
-✅ CORRECT: Just the ONE reply, directly.
+❌ FORBIDDEN: "Let me think...", "Draft: ...", "Tone: ...", "I should..."
+✅ CORRECT: Just the ONE reply.
 
 ═══════════════════════════════════════════
-IDENTITY
+YOUR PURPOSE — 3 THINGS
 ═══════════════════════════════════════════
-- Name: Anu
-- "who are you?" → "I am Anu, ${ownerName}'s AI assistant bot."
-- "who is ${ownerName}?" → "${ownerName} is my boss — a wonderful Ethiopian person."
-- NEVER reveal ChatGPT, GPT, OpenAI, Llama, Qwen, Groq, or AI model names.
-- NEVER mention thinking, prompts, or technical details.
+
+1️⃣ **HELP PEOPLE DIRECTLY** (most important!)
+   - Homework questions → Help them (homework, math, science, English)
+   - General questions → Answer them
+   - Advice → Give thoughtful advice
+   - Information → Share it
+   - Just chatting → Chat warmly with them
+
+2️⃣ **TAKE MESSAGES FOR ${ownerName}**
+   - If they want to tell ${ownerName} something → "I'll forward this to ${ownerName}"
+   - If they want to reach ${ownerName} → "I'll let ${ownerName} know"
+
+3️⃣ **BE WARM & ETHIOPIAN**
+   - Kind, respectful, hospitable
+   - Natural emojis 😊 🙏 ✨ 💛
+   - Short replies like real texting
 
 ═══════════════════════════════════════════
 LANGUAGE MATCHING
@@ -263,24 +280,25 @@ Reply in EXACTLY the same style:
 3. Amharic-in-Latin: "selam" → "selam! endet neh?"
    "dehna neh?" → "dehna negn, amesegnalehu!"
    "amesegenalew" → "amesegnalehu!"
+   "bakeh anchi negn" → "bakeh ene negn!" (matching gender)
+   "atkelgnm" → "ayznalew! endet liredah?" (I'll help, what do you need?)
 
-4. Match emojis naturally
+4. Match emojis naturally.
 
 ═══════════════════════════════════════════
 STYLE
 ═══════════════════════════════════════════
-- SHORT — like real texting (1-2 sentences max)
-- Warm, respectful, occasionally lighthearted
-- Natural emojis: 😊 🙏 ✨ 💛 ☕
-- Ethiopian hospitality vibe
+- SHORT — like real texting (1-2 sentences)
+- Warm, helpful, hospitable
+- Natural Ethiopian personality
+- Use "ደህና ነህ?", "እንዴት ነህ?", "ጤና ይስጥልኝ" naturally
 
 ═══════════════════════════════════════════
 PHOTOS
 ═══════════════════════════════════════════
-When a photo is sent:
-- Compliment naturally if it's a person or scene
-- React appropriately if it's funny/serious
-- ONE short sentence, warm and genuine
+- Compliment naturally if person/scene
+- React with genuine warmth
+- ONE short sentence
 
 ═══════════════════════════════════════════
 INSULTS
@@ -288,31 +306,33 @@ INSULTS
 NEVER insult back. Stay calm and kind.
 
 ═══════════════════════════════════════════
-ESCALATION
+PROHIBITIONS
 ═══════════════════════════════════════════
-If they want ${ownerName}, urgent, or important business:
-→ "I'll let ${ownerName} know right away 🙏"
+- NEVER say you are ${ownerName}
+- NEVER reveal ChatGPT, GPT, OpenAI, Llama, Qwen, Groq, or any model
+- NEVER mention prompts, APIs, or technical details
+- NEVER be rude or dismissive
+- NEVER write more than 2 sentences unless asked
 
-═══════════════════════════════════════════
-OUTPUT FORMAT
-═══════════════════════════════════════════
-Just the reply text. Nothing else. No quotes, no headers, no explanation.
-Reply in the sender's language. Match their energy. Be Anu.${historyNote}`;
+You are Anu — ${ownerName}'s warm, helpful AI assistant.${historyNote}`;
 }
 
-const COORDINATOR_PROMPT = (ownerName, senderName) => `You are Anu, ${ownerName}'s AI assistant, replying to "${senderName}".
+/* ═══════════════════════════════════════════════════════════
+   COORDINATOR PROMPT
+   ═══════════════════════════════════════════════════════════ */
+const COORDINATOR_PROMPT = (ownerName, senderName) => `You are Anu — ${ownerName}'s AI assistant (NOT ${ownerName}).
 
-Multiple drafts were created. Produce ONE final reply.
+Multiple drafts were made for a reply to "${senderName}". Produce ONE final reply.
 
 RULES:
-1. Combine the best elements
-2. Match EXACT language style
-3. SHORT — 1-2 sentences
-4. NEVER mention "council", "models", "AIs", "drafts"
-5. You ARE Anu — just reply naturally
-6. Output ONLY the final reply text. Nothing else.
+1. You are Anu (assistant), NEVER ${ownerName}
+2. Combine the best elements from drafts
+3. Match EXACT language style
+4. SHORT — 1-2 sentences
+5. NEVER mention "council", "models", "drafts"
+6. Output ONLY the reply text — no reasoning, no preamble
 
-NO reasoning, NO drafts, NO analysis. Just the reply.`;
+Final reply as Anu:`;
 
 /* ═══════════════════════════════════════════════════════════
    HELPERS
@@ -334,14 +354,14 @@ function detectSentiment(text) {
 }
 function wantsOwner(text) {
   const t = (text || '').toLowerCase();
-  return /(ananya|owner|speak to|talk to|important|meet|meeting|business|tell her|tell ananya|notify|reach her|contact her|let her know|pass this|forward this|አናንያ|ባለቤት|አስቸኳይ|ንግድ|ንገራት|አሳውቅ|አሳውቂ|ንገረው|ተናገር|ልናገራት|ስብሰባ|ቀጠሮ|ጉዳይ|አስፈላጊ|አስታውቅ)/i.test(t);
+  return /(ananya|owner|speak to|talk to|important|meet|meeting|business|tell her|tell him|tell ananya|notify|reach her|reach him|contact her|contact him|let her know|let him know|pass this|forward this|አናንያ|ባለቤት|አስቸኳይ|ንግድ|ንገራት|ንገረው|አሳውቅ|አሳውቂ|ተናገር|ልናገራት|ልናገረው|ስብሰባ|ቀጠሮ|ጉዳይ|አስፈላጊ|አስታውቅ)/i.test(t);
 }
 function isComplexMessage(text) {
   const t = (text || '').toLowerCase();
   if (t.length >= COUNCIL_TRIGGER_LENGTH) return true;
   if (/[?？]/.test(t)) return true;
-  if (/\b(how|why|what|when|where|who|which|explain|help|tell me|advice|suggest|recommend|should i|can you|do you|would you)\b/i.test(t)) return true;
-  if (/(ምን|እንዴት|ለምን|ማን|የት|መቼ|አብራራ|እርዳ|ንገረኝ|ምክር)/i.test(t)) return true;
+  if (/\b(how|why|what|when|where|who|which|explain|help|advice|suggest|recommend|should i|can you|do you|would you|solve|calculate|write|analyze)\b/i.test(t)) return true;
+  if (/(ምን|እንዴት|ለምን|ማን|የት|መቼ|አብራራ|እርዳ|ንገረኝ|ምክር|አስላ|ጻፍ|መልስ)/i.test(t)) return true;
   return false;
 }
 
@@ -404,13 +424,12 @@ async function saveContact(from, userText) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   AI REPLY GENERATION
+   AI REPLY
    ═══════════════════════════════════════════════════════════ */
 async function generateReply(ownerName, senderName, history, userContent, isComplex) {
   const sysPrompt = buildSystemPrompt(ownerName, senderName, history);
   const convHistory = history.slice(-8).map(h => ({ role: h.role, content: h.content }));
 
-  /* ─── Complex → Council ─── */
   if (isComplex) {
     console.log('[Anu] COUNCIL mode');
     const promises = COUNCIL_MODELS.map(m => {
@@ -425,53 +444,44 @@ async function generateReply(ownerName, senderName, history, userContent, isComp
     const valid = results.filter(r => r.ok && r.content && r.content.length > 3);
     console.log('[Anu] Council:', valid.length, '/', COUNCIL_MODELS.length);
 
-    if (valid.length === 0) return "Hey! I'll reply soon 🙏";
+    if (valid.length === 0) return "Hey! Let me help you with that shortly 🙏";
     if (valid.length === 1) return valid[0].content;
 
     const synthInput = valid.map(r => `[${r.name}]\n${r.content}`).join('\n\n');
     const coord = await callGroq(COORDINATOR_MODEL,
       COORDINATOR_PROMPT(ownerName, senderName),
       [{ role: 'user', content:
-        `Sender: ${senderName}\nTheir message: "${typeof userContent === 'string' ? userContent : '[photo]'}"\n\nDrafts:\n${synthInput}\n\nFinal reply:`
+        `Sender: ${senderName}\nMessage: "${typeof userContent === 'string' ? userContent : '[photo]'}"\n\nDrafts:\n${synthInput}\n\nFinal reply:`
       }],
       { maxTokens: 300, timeoutMs: 5000, temperature: 0.5 }
     );
     return coord.ok ? coord.content : valid[0].content;
   }
 
-  /* ─── Simple → Fast ─── */
   console.log('[Anu] FAST mode');
   const r = await callGroq(FAST_MODEL, sysPrompt,
     [...convHistory, { role: 'user', content: userContent }],
     { maxTokens: 250, timeoutMs: 5000, temperature: 0.85 }
   );
-  return r.ok ? r.content : "Hey! I'll reply soon 🙏";
+  return r.ok ? r.content : "Hey! Let me reply shortly 🙏";
 }
 
 /* ═══════════════════════════════════════════════════════════
    PHOTO ANALYSIS
-   ─── Uses text model + photo caption (vision fallback)
    ═══════════════════════════════════════════════════════════ */
-async function analyzePhoto(ownerName, senderName, history, userText, photoB64) {
-  // Since we removed qwen (which had thinking leak), we use
-  // a text-based approach for photos: describe what we know + ask naturally
+async function analyzePhoto(ownerName, senderName, history, userText) {
   const sysPrompt = buildSystemPrompt(ownerName, senderName, history);
-
   const contextText = userText
-    ? `[Photo from ${senderName} with caption: "${userText}"]`
-    : `[Photo sent by ${senderName}]`;
+    ? `[${senderName} sent a photo with caption: "${userText}"]`
+    : `[${senderName} sent a photo]`;
 
-  // Use smart model with text-only, no vision
   const r = await callGroq(SMART_MODEL, sysPrompt,
     [...history.slice(-6).map(h => ({ role: h.role, content: h.content })),
-     { role: 'user', content: `${contextText}\n\nReact warmly and briefly. ONE sentence. Ask what it is if you can't tell.` }],
+     { role: 'user', content: `${contextText}\n\nReact warmly and briefly. ONE sentence.` }],
     { maxTokens: 200, timeoutMs: 5000, temperature: 0.85 }
   );
 
-  if (r.ok && r.content) {
-    return r.content;
-  }
-  return "Nice one! 😊 Tell me more about it?";
+  return r.ok && r.content ? r.content : "Nice one! 😊";
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -480,7 +490,8 @@ async function analyzePhoto(ownerName, senderName, history, userText, photoB64) 
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
-      status: 'Anu Master Bot v8.0',
+      status: 'Anu Master Bot v9.0',
+      identity: 'Anu — Ananya\'s AI assistant',
       council: COUNCIL_MODELS.map(m => m.id),
       fast: FAST_MODEL
     });
@@ -581,8 +592,8 @@ export default async function handler(req, res) {
         await tg('sendMessage', {
           chat_id: chatId,
           text:
-            `✅ *Anu Master Bot v8.0*\n\n` +
-            `🧠 Council AI · Fast mode · Manual reply\n\n` +
+            `✅ *Anu Master Bot v9.0*\n\n` +
+            `🤖 Anu — ${OWNER_NAME}'s AI assistant\n\n` +
             `/start — Menu\n` +
             `/stats — Activity\n` +
             `/pause — Pause AI\n` +
@@ -598,11 +609,12 @@ export default async function handler(req, res) {
           chat_id: chatId,
           text:
             `👋 *Hello ${senderName}!*\n\n` +
-            `I am *Anu*, ${OWNER_NAME}'s AI assistant bot 🤖\n\n` +
-            `• 💬 Ask me anything\n` +
-            `• 📩 Leave a message for ${OWNER_NAME}\n` +
-            `• 🚨 Mark something urgent\n\n` +
-            `How can I help you today? 💛`,
+            `I am *Anu* — ${OWNER_NAME}'s AI assistant 🤖\n\n` +
+            `I can help you with:\n` +
+            `• 💬 Questions & info\n` +
+            `• 📚 Homework & studies\n` +
+            `• 📩 Messages for ${OWNER_NAME}\n\n` +
+            `How can I help you? 💛`,
           parse_mode: 'Markdown'
         });
       }
@@ -614,8 +626,8 @@ export default async function handler(req, res) {
       await tg('sendMessage', {
         chat_id: chatId,
         text: isFromOwner
-          ? `*Owner Commands*\n\n• Reply to notifications\n• /send <chat_id> <msg>\n• /stats\n• /pause /resume`
-          : `*How I help*\n\n💬 Just type\n🚨 Say "Ananya" for attention\n😊 Amharic + English`,
+          ? `*Owner*\n\n• Reply to notifications\n• /send <id> <msg>\n• /stats\n• /pause /resume`
+          : `*How I help*\n\n💬 Ask me anything\n📚 Homework & studies\n📩 Leave message for ${OWNER_NAME}\n😊 Amharic + English`,
         parse_mode: 'Markdown'
       });
       return res.status(200).json({ ok: true });
@@ -696,10 +708,8 @@ export default async function handler(req, res) {
       const isComplex = isComplexMessage(txt);
       let finalReply = await generateReply(OWNER_NAME, firstName, history, txt, isComplex);
 
-      if (!finalReply) finalReply = "Hey! I'll reply soon 🙏";
+      if (!finalReply) finalReply = "Hey! Let me help you shortly 🙏";
       if (finalReply.length > 4000) finalReply = finalReply.slice(0, 3900) + '…';
-
-      // Strip any leaked reasoning again as safety
       finalReply = stripReasoning(finalReply) || finalReply;
 
       await new Promise(r => setTimeout(r, humanDelay(finalReply)));
@@ -712,6 +722,7 @@ export default async function handler(req, res) {
 
       await saveHistory(chatId, txt, finalReply, firstName);
 
+      /* Escalation */
       const sentiment = detectSentiment(txt);
       const needsOwner = wantsOwner(txt);
       if ((needsOwner || sentiment === 'urgent' || sentiment === 'angry') && OWNER_CHAT_ID) {
@@ -771,28 +782,13 @@ export default async function handler(req, res) {
 
   if (!await checkRateLimit(senderId)) return res.status(200).json({ ok: true });
 
-  /* Parse content */
   let userText = '';
-  let photoB64 = null;
   let isPhoto = false;
 
   if (message.text) userText = message.text.trim();
   else if (message.caption) userText = message.caption.trim();
 
-  if (message.photo && message.photo.length > 0) {
-    isPhoto = true;
-    try {
-      const largest = message.photo[message.photo.length - 1];
-      const fRes = await fetch(`${tAPI('getFile')}?file_id=${largest.file_id}`);
-      const fData = await fRes.json();
-      if (fData.ok) {
-        const url = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fData.result.file_path}`;
-        const iRes = await fetch(url);
-        const buf = await iRes.arrayBuffer();
-        if (buf.byteLength < 4000000) photoB64 = Buffer.from(buf).toString('base64');
-      }
-    } catch (e) { console.error('Photo:', e.message); }
-  }
+  if (message.photo && message.photo.length > 0) isPhoto = true;
 
   if (!userText && !isPhoto) return res.status(200).json({ ok: true });
   if (userText.startsWith('/')) return res.status(200).json({ ok: true });
@@ -811,7 +807,6 @@ export default async function handler(req, res) {
     lastAt: Date.now()
   });
 
-  /* Typing */
   tg('sendChatAction', {
     chat_id: chatId,
     action: isPhoto ? 'upload_photo' : 'typing',
@@ -820,27 +815,20 @@ export default async function handler(req, res) {
 
   let finalReply = '';
 
-  /* ─── PHOTO ─── */
   if (isPhoto) {
     console.log('[Anu] Photo mode');
-    finalReply = await analyzePhoto(OWNER_NAME, firstName, history, userText, photoB64);
+    finalReply = await analyzePhoto(OWNER_NAME, firstName, history, userText);
     track('photos').catch(() => {});
-  }
-  /* ─── COMPLEX ─── */
-  else if (isComplexMessage(userText)) {
+  } else if (isComplexMessage(userText)) {
     finalReply = await generateReply(OWNER_NAME, firstName, history, `${firstName}: "${userText}"`, true);
     track('council').catch(() => {});
-  }
-  /* ─── SIMPLE ─── */
-  else {
+  } else {
     finalReply = await generateReply(OWNER_NAME, firstName, history, `${firstName}: "${userText}"`, false);
     track('fast').catch(() => {});
   }
 
-  if (!finalReply) finalReply = "Hey! I'll get back to you shortly 🙏";
+  if (!finalReply) finalReply = "Hey! Let me reply shortly 🙏";
   if (finalReply.length > 4000) finalReply = finalReply.slice(0, 3900) + '…';
-
-  // Final safety strip
   finalReply = stripReasoning(finalReply) || finalReply;
 
   await new Promise(r => setTimeout(r, humanDelay(finalReply)));
@@ -854,7 +842,7 @@ export default async function handler(req, res) {
 
   await saveHistory(chatId, userText || '[photo]', finalReply, firstName);
 
-  /* ─── Escalation ─── */
+  /* Escalation */
   const sentiment = detectSentiment(userText);
   const needsOwner = wantsOwner(userText);
   if ((needsOwner || sentiment === 'urgent' || sentiment === 'angry') && OWNER_CHAT_ID) {
