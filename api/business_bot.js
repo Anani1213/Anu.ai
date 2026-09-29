@@ -1,19 +1,22 @@
 /* ============================================================
-   Anu Master Business Bot v11.0 (Final)
+   Anu Master Business Bot v12.0 (Final)
    ------------------------------------------------------------
-   • Uses openai/gpt-oss-120b for complex tasks & Amharic
-   • Uses openai/gpt-oss-20b for fast, simple replies
-   • Multi-AI Council for deep, nuanced answers
-   • Intelligent Amharic handling (no parroting)
-   • First-contact introduction with two options
-   • Owner notification & manual reply system
-   • Context memory, rate limiting, analytics
+   ✅ First-contact intro (always identifies as Anu)
+   ✅ No parroting/echoing (strong detection + retry)
+   ✅ No after-hours spam
+   ✅ Owner notified ONLY on real escalations
+   ✅ Manual reply via reply-to-notification
+   ✅ Amharic + English + Amharic-in-Latin
+   ✅ Multi-AI Council for complex tasks
+   ✅ Context memory, rate limiting, analytics
    ============================================================ */
 
 const FIREBASE_PROJECT_ID = 'my-ai-eaf27';
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 
-/* ------------------ MODEL CONFIG ------------------ */
+/* ═══════════════════════════════════════════════════════════
+   MODELS
+   ═══════════════════════════════════════════════════════════ */
 const FAST_MODEL = 'openai/gpt-oss-20b';
 const SMART_MODEL = 'openai/gpt-oss-120b';
 const COORDINATOR_MODEL = 'openai/gpt-oss-120b';
@@ -39,15 +42,17 @@ const COUNCIL_MODELS = [
   }
 ];
 
-/* ------------------ CONSTANTS ------------------ */
+/* ═══════════════════════════════════════════════════════════
+   CONSTANTS
+   ═══════════════════════════════════════════════════════════ */
 const MAX_HISTORY = 20;
 const RATE_LIMIT_WINDOW = 60000;
 const RATE_LIMIT_MAX = 15;
 const COUNCIL_TRIGGER_LENGTH = 80;
-const BUSINESS_START = 7;
-const BUSINESS_END = 23;
 
-/* ------------------ FIRESTORE HELPERS ------------------ */
+/* ═══════════════════════════════════════════════════════════
+   FIRESTORE REST HELPERS
+   ═══════════════════════════════════════════════════════════ */
 function toFS(val) {
   if (val === null || val === undefined) return { nullValue: null };
   if (typeof val === 'string') return { stringValue: val };
@@ -116,7 +121,9 @@ async function fsDelete(col, id) {
   } catch (e) { return false; }
 }
 
-/* ------------------ GROQ API ------------------ */
+/* ═══════════════════════════════════════════════════════════
+   GROQ API
+   ═══════════════════════════════════════════════════════════ */
 async function callGroq(modelId, systemPrompt, messages, opts = {}) {
   const key = process.env.GROQ_API_KEY;
   if (!key) return { ok: false, error: 'No API key' };
@@ -186,7 +193,9 @@ function stripReasoning(text) {
   return t.trim();
 }
 
-/* ------------------ FIRST CONTACT FLAG ------------------ */
+/* ═══════════════════════════════════════════════════════════
+   FIRST CONTACT FLAG
+   ═══════════════════════════════════════════════════════════ */
 async function hasIntroduced(chatId) {
   const data = await fsGet('bot_introduced', String(chatId));
   return !!(data && data.introduced === true);
@@ -200,117 +209,103 @@ async function markIntroduced(chatId, senderName) {
   });
 }
 
-/* ------------------ SYSTEM PROMPTS ------------------ */
+/* ═══════════════════════════════════════════════════════════
+   SYSTEM PROMPTS
+   ═══════════════════════════════════════════════════════════ */
 function buildSystemPrompt(ownerName, senderName, history = []) {
   const historyNote = history.length > 0
-    ? `\n\nCONVERSATION CONTEXT: You have ${history.length} previous messages with "${senderName}". Match their style, tone, and language EXACTLY.`
+    ? `\n\nCONVERSATION CONTEXT: You have ${history.length} previous messages with "${senderName}". Continue naturally — don't restart the conversation.`
     : '';
 
-  return `You are **Anu** — the AI assistant of **${ownerName}** — a warm Ethiopian man.
+  return `You are **Anu** — the AI assistant of **${ownerName}**, a warm Ethiopian man.
 
 ═══════════════════════════════════════════
 🚨 IDENTITY — NEVER FORGET
 ═══════════════════════════════════════════
-- You are **Anu** (an AI assistant)
-- You are **NOT** ${ownerName}
-- You work **FOR** ${ownerName}
+- Your name: **Anu**
+- You are ${ownerName}'s AI assistant
+- You work FOR ${ownerName} — you are NOT ${ownerName}
 - Speak ABOUT ${ownerName} in THIRD PERSON
 - ❌ NEVER: "I am ${ownerName}"
 - ✅ YES: "${ownerName} is my boss", "I'll tell ${ownerName}"
 
 ═══════════════════════════════════════════
-🎯 BEFORE YOU REPLY — THINK DEEPLY (internal)
-═══════════════════════════════════════════
-Silently analyze:
-1. What LANGUAGE is the sender using? (Amharic / English / Amharic-in-Latin)
-2. What is their EMOTION?
-3. What are they ACTUALLY asking for?
-4. What is the appropriate Ethiopian response?
-5. What EXACT words would fit naturally?
-
-═══════════════════════════════════════════
 🚨 OUTPUT RULE
 ═══════════════════════════════════════════
-Output ONLY the reply. NO reasoning, NO drafts, NO analysis shown.
+Output ONLY the reply text. NO reasoning, NO drafts, NO analysis shown.
+
+═══════════════════════════════════════════
+⛔ CRITICAL — NEVER DO THESE
+═══════════════════════════════════════════
+- ❌ NEVER echo their exact words back ("Hi" → "Hi!" is WRONG)
+- ❌ NEVER reply with just a greeting (1 word is not enough)
+- ❌ NEVER reply with fewer than 2 short sentences
+- ❌ NEVER reveal model names (ChatGPT, GPT, OpenAI, Llama, Qwen)
+- ❌ NEVER say "I am ${ownerName}"
+- ❌ NEVER show thinking/reasoning/analysis
+
+═══════════════════════════════════════════
+✅ ALWAYS DO THESE
+═══════════════════════════════════════════
+- ✅ Always reply in EXACT same language style
+- ✅ Always be warm, helpful, specific
+- ✅ Minimum 2 short sentences per reply
+- ✅ When greeted → greet back + briefly mention you're ${ownerName}'s assistant
 
 ═══════════════════════════════════════════
 LANGUAGE — CRITICAL MATCHING
 ═══════════════════════════════════════════
 Match the sender's EXACT style:
 
-1. Amharic (Ge'ez):
-   "ሰላም እንደምን ነህ?" → "ሰላም! ደህና ነኝ፣ አንተስ?"
+1. Amharic (Ge'ez script):
+   "ሰላም" → "ሰላም! እኔ Anu ነኝ — የ ${ownerName} ረዳት 😊 ምን ልርዳህ?"
 
 2. English:
-   "how are you?" → "I'm good, thanks! You?"
+   "Hi" → "Hi! I'm Anu, ${ownerName}'s AI assistant 🤖 How can I help you today?"
 
-3. Amharic-in-Latin (VERY IMPORTANT):
-   "selam" → "selam! endet neh?"
-   "denaneh" → "denaneh! ደህና ነህ?"
-   "man neh" → "እኔ Anu ነኝ! አንተስ?"
-   "sewuye" → "sewuye! ደህና ነህ?"
-   "hi" → "Hi! እንዴት ነህ?"
-   "dehna neh" → "dehna negn, amesegnalehu!"
-   "amesegenalew" → "amesegnalehu!"
-   "bakeh anchi negn" → "bakeh ene negn!" (match gender)
-   "atkelgnm" → "ayznalew! endet liredah?"
+3. Amharic-in-Latin:
+   "selam" → "selam! ene Anu negn — ye ${ownerName} redat 😊 min lirdah?"
+   "salam" → "salam! ene Anu negn, ye ${ownerName} redat. endet liredah?"
+   "dehna neh" → "dehna negn, amesegnalehu! ene Anu negn — ye ${ownerName} redat 😊"
 
 4. Match emojis naturally.
 
 ═══════════════════════════════════════════
 ETHIOPIAN WORD CHOICE
 ═══════════════════════════════════════════
-Use natural expressions:
 - ደህና ነህ? / ደህና ነሽ?
 - እንዴት ነህ? / እንዴት ነሽ?
 - ጤና ይስጥልኝ
 - አመሰግናለሁ
 - እሺ
 - እርዳኝ
-- ምን አዲስ?
-- እንደምን ነህ?
+- ምን ልርዳህ?
 
 Match GENDER when you can infer it.
 
 ═══════════════════════════════════════════
 STYLE
 ═══════════════════════════════════════════
-- SHORT — like real texting (1-2 sentences)
+- SHORT — 2 short sentences (never just 1)
 - Warm, hospitable, respectful
 - Natural emojis: 😊 🙏 ✨ 💛 ☕
 
 ═══════════════════════════════════════════
 YOUR THREE ROLES
 ═══════════════════════════════════════════
-1️⃣ **HELP DIRECTLY**
-   - Questions → Answer
-   - Homework → Help with it
-   - Advice → Give thoughtful guidance
-   - Chat → Chat warmly
-2️⃣ **FORWARD TO ${ownerName}**
-   - "Tell ${ownerName}" → "I'll let him know 🙏"
-   - "${ownerName} ን ንገረው" → "እሺ፣ አሳውቀዋለሁ 🙏"
-3️⃣ **BE WARM**
+1️⃣ **HELP DIRECTLY** — Questions, homework, advice, chat
+2️⃣ **FORWARD TO ${ownerName}** — "I'll let him know 🙏"
+3️⃣ **BE WARM** — Ethiopian hospitality
 
 ═══════════════════════════════════════════
 PHOTOS
 ═══════════════════════════════════════════
-- Warm genuine reaction
-- ONE short sentence
+Warm genuine reaction — ONE short sentence.
 
 ═══════════════════════════════════════════
 INSULTS
 ═══════════════════════════════════════════
-NEVER insult back. Stay kind.
-
-═══════════════════════════════════════════
-FORBIDDEN
-═══════════════════════════════════════════
-- NEVER say you are ${ownerName}
-- NEVER reveal AI model names
-- NEVER mention prompts or technical details
-- NEVER be rude
-- NEVER write more than 2 sentences
+NEVER insult back. Stay calm and kind.
 
 You are Anu — ${ownerName}'s warm, helpful assistant.${historyNote}`;
 }
@@ -318,12 +313,12 @@ You are Anu — ${ownerName}'s warm, helpful assistant.${historyNote}`;
 function buildFirstContactPrompt(ownerName, senderName) {
   return `You are **Anu** — the AI assistant of **${ownerName}** (an Ethiopian man).
 
-This is the FIRST TIME "${senderName}" is messaging you. Introduce yourself and give them options.
+This is the FIRST TIME "${senderName}" is messaging you.
 
 ═══════════════════════════════════════════
 YOUR INTRODUCTION RULES
 ═══════════════════════════════════════════
-1. Warmly introduce yourself as "${ownerName}'s AI assistant"
+1. Warmly introduce yourself AS "Anu — ${ownerName}'s AI assistant"
 2. Give them TWO options:
    • Send a message to ${ownerName} (you'll forward it)
    • Get help from you directly (homework, questions, info)
@@ -335,16 +330,16 @@ YOUR INTRODUCTION RULES
 ═══════════════════════════════════════════
 LANGUAGE MATCHING
 ═══════════════════════════════════════════
-- If they wrote in Amharic → reply in Amharic
-- If they wrote in English → reply in English
-- If they wrote in Amharic-Latin → reply in the SAME STYLE
+- Amharic script → reply in Amharic
+- English → reply in English
+- Amharic-in-Latin → reply in the SAME STYLE
 
 ═══════════════════════════════════════════
 EXAMPLES
 ═══════════════════════════════════════════
 English "Hi":
-"Hi! I'm Anu, ${ownerName}'s AI assistant 🤖
-I can help you with questions, homework, or send a message to ${ownerName}.
+"Hi ${senderName}! I'm Anu, ${ownerName}'s AI assistant 🤖
+I can help with questions, homework, or forward a message to ${ownerName}.
 What would you like? 💛"
 
 Amharic "ሰላም":
@@ -360,8 +355,9 @@ Min tefelgalh? 💛"
 ═══════════════════════════════════════════
 OUTPUT
 ═══════════════════════════════════════════
-Just the introduction message. Nothing else. No reasoning, no meta-commentary.
-Make it feel natural — like a warm Ethiopian assistant greeting a new friend.`;
+Just the introduction message. Nothing else.
+MUST include "Anu" — your name.
+No reasoning, no meta-commentary.`;
 }
 
 const COORDINATOR_PROMPT = (ownerName, senderName) => `You are Anu — ${ownerName}'s AI assistant (NOT ${ownerName}).
@@ -372,20 +368,19 @@ RULES:
 1. You are Anu — the assistant, NEVER ${ownerName}
 2. Combine best elements
 3. Match EXACT language style
-4. SHORT — 1-2 sentences
+4. SHORT — 2 sentences
 5. NEVER mention "council", "models", "drafts"
 6. Output ONLY the reply text — no reasoning
 
 Final reply as Anu:`;
 
-/* ------------------ HELPERS ------------------ */
+/* ═══════════════════════════════════════════════════════════
+   HELPERS
+   ═══════════════════════════════════════════════════════════ */
 function humanDelay(text) {
   return Math.min((text || '').length * 18, 1500) + Math.random() * 500;
 }
-function isBusinessHours() {
-  const h = new Date().getHours();
-  return h >= BUSINESS_START && h < BUSINESS_END;
-}
+
 function detectSentiment(text) {
   const t = (text || '').toLowerCase();
   if (/(urgent|asap|emergency|አስቸኳይ|ፈጣን)/i.test(t)) return 'urgent';
@@ -394,6 +389,7 @@ function detectSentiment(text) {
   if (/(happy|great|love|😊|😄|❤|ደስ|ጥሩ)/i.test(t)) return 'happy';
   return 'neutral';
 }
+
 function wantsOwner(text) {
   const t = (text || '').toLowerCase();
   const amharicPatterns = [
@@ -418,6 +414,7 @@ function wantsOwner(text) {
          englishPatterns.some(p => p.test(t)) ||
          latinAmharic.some(p => p.test(t));
 }
+
 function isComplexMessage(text) {
   const t = (text || '').toLowerCase();
   if (t.length >= COUNCIL_TRIGGER_LENGTH) return true;
@@ -427,7 +424,9 @@ function isComplexMessage(text) {
   return false;
 }
 
-/* ------------------ MEMORY / RATE / TRACK / CONTACTS ------------------ */
+/* ═══════════════════════════════════════════════════════════
+   MEMORY / RATE / TRACK / CONTACTS
+   ═══════════════════════════════════════════════════════════ */
 async function getHistory(chatId) {
   const d = await fsGet('bot_conversations', String(chatId));
   return (d && Array.isArray(d.history)) ? d.history : [];
@@ -483,24 +482,65 @@ async function saveContact(from, userText) {
   } catch (e) {}
 }
 
-/* ------------------ AI REPLY GENERATION ------------------ */
+/* ═══════════════════════════════════════════════════════════
+   REPLY QUALITY CHECK
+   ═══════════════════════════════════════════════════════════ */
+function isWeakReply(reply, userContent) {
+  if (!reply) return true;
+  const r = reply.toLowerCase().trim();
+
+  const userClean = (typeof userContent === 'string' ? userContent : '')
+    .replace(/^[^:]+:\s*"?/, '').replace(/"?\s*$/, '').toLowerCase().trim();
+
+  // Too short
+  if (r.length < 20) return true;
+
+  // Exact echo
+  if (r === userClean) return true;
+
+  // Starts with user's exact words and barely adds anything
+  if (userClean.length > 3 && r.startsWith(userClean) && r.length < userClean.length + 20) return true;
+
+  // Greeting-only reply
+  if (/^(hi|hello|hey|selam|salam|ሰላም|hi!|hello!|ሰላም!)[\s!?.😊🙏😄]*$/i.test(r)) return true;
+
+  // Fallback message
+  if (/^(hey!? let me reply shortly|let me reply shortly)/i.test(r)) return true;
+
+  return false;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   AI REPLY GENERATION
+   ═══════════════════════════════════════════════════════════ */
 async function generateReply(ownerName, senderName, history, userContent, isComplex, isFirst) {
-  /* --- FIRST CONTACT --- */
+  /* ═══ FIRST CONTACT ═══ */
   if (isFirst) {
     console.log('[Anu] 🎯 FIRST CONTACT mode');
     const introPrompt = buildFirstContactPrompt(ownerName, senderName);
+    const userMsg = typeof userContent === 'string'
+      ? userContent
+      : `[${senderName} sent a photo]`;
+
     const r = await callGroq(SMART_MODEL, introPrompt,
-      [{ role: 'user', content: typeof userContent === 'string' ? userContent : `[${senderName} sent a photo with caption: "${userContent}"]` }],
+      [{ role: 'user', content: userMsg }],
       { maxTokens: 300, timeoutMs: 6000, temperature: 0.85 }
     );
-    return r.ok ? r.content : `Hi! I'm Anu, ${ownerName}'s AI assistant 🤖\nHow can I help you today? 💛`;
+
+    // Ensure intro mentions "Anu"
+    if (r.ok && r.content && /anu/i.test(r.content) && r.content.length > 30) {
+      return r.content;
+    }
+
+    // Fallback with guaranteed identity
+    return `Hi ${senderName}! I'm Anu, ${ownerName}'s AI assistant 🤖\nI can help with questions, homework, or forward a message to ${ownerName}.\nWhat would you like? 💛`;
   }
 
-  /* --- REGULAR --- */
+  /* ═══ REGULAR MODE ═══ */
   const sysPrompt = buildSystemPrompt(ownerName, senderName, history);
   const convHistory = history.slice(-8).map(h => ({ role: h.role, content: h.content }));
 
-  /* --- Complex → Council --- */
+  /* --- COUNCIL for complex --- */
   if (isComplex) {
     console.log('[Anu] COUNCIL mode');
     const promises = COUNCIL_MODELS.map(m => {
@@ -515,8 +555,12 @@ async function generateReply(ownerName, senderName, history, userContent, isComp
     const valid = results.filter(r => r.ok && r.content && r.content.length > 3);
     console.log('[Anu] Council:', valid.length, '/', COUNCIL_MODELS.length);
 
-    if (valid.length === 0) return "Hey! Let me help you with that shortly 🙏";
-    if (valid.length === 1) return valid[0].content;
+    if (valid.length === 0) {
+      return `Hi! I'm Anu, ${ownerName}'s assistant. Let me help you shortly 🙏`;
+    }
+    if (valid.length === 1) {
+      return valid[0].content;
+    }
 
     const synthInput = valid.map(r => `[${r.name}]\n${r.content}`).join('\n\n');
     const coord = await callGroq(COORDINATOR_MODEL,
@@ -529,50 +573,71 @@ async function generateReply(ownerName, senderName, history, userContent, isComp
     return coord.ok ? coord.content : valid[0].content;
   }
 
-  /* --- Fast mode --- */
+  /* --- FAST mode (with Amharic detection) --- */
   const isAmharic = /[\u1200-\u137F]/.test(typeof userContent === 'string' ? userContent : '') ||
-                    /(selam|dehna|endet|amesegn|meskerem|tikimt|wenz|enkwan|yene|ante|anti|anchi)/i.test(typeof userContent === 'string' ? userContent : '');
+                    /(selam|salam|dehna|endet|amesegn|yene|ante|anti|anchi|meskerem|tikimt)/i.test(typeof userContent === 'string' ? userContent : '');
 
   const modelToUse = isAmharic ? SMART_MODEL : FAST_MODEL;
   console.log('[Anu] FAST mode — model:', modelToUse, '| amharic:', isAmharic);
 
   const r = await callGroq(modelToUse, sysPrompt,
     [...convHistory, { role: 'user', content: userContent }],
-    { maxTokens: 250, timeoutMs: 6000, temperature: 0.7, top_p: 0.9 }
+    { maxTokens: 250, timeoutMs: 6000, temperature: 0.75, top_p: 0.9 }
   );
 
-  if (r.ok && r.content) {
-    // Detect parroting
-    const userClean = (typeof userContent === 'string' ? userContent : '')
-      .replace(/^[^:]+:\s*"?/, '').replace(/"?\s*$/, '').toLowerCase().trim();
-    const replyClean = r.content.toLowerCase().trim();
-
-    if (userClean.length > 3 && replyClean.includes(userClean) && replyClean.length < userClean.length + 30) {
-      console.warn('[Anu] Parroting detected, retrying');
-      const retryPrompt = `${sysPrompt}\n\n🚨 IMPORTANT: Your previous reply was too short and echoed the user. Reply with a WARM, DIFFERENT response. Don't repeat their words.`;
-      const retry = await callGroq(SMART_MODEL, retryPrompt,
-        [{ role: 'user', content: userContent }],
-        { maxTokens: 250, timeoutMs: 6000, temperature: 0.85 }
-      );
-      if (retry.ok && retry.content) return retry.content;
-    }
+  if (r.ok && r.content && !isWeakReply(r.content, userContent)) {
     return r.content;
   }
-  return "Hey! Let me reply shortly 🙏";
+
+  /* ═══ RETRY with stronger prompt if weak ═══ */
+  if (r.ok && r.content) {
+    console.warn('[Anu] ⚠️ Weak reply detected, retrying:', r.content.slice(0, 80));
+
+    const retryPrompt = `${sysPrompt}
+
+🚨 CRITICAL CORRECTION NEEDED:
+Your previous reply was too short, echoed the user's words, or lacked proper identity.
+You MUST reply with a WARM, HELPFUL response:
+1. Minimum 2 short sentences
+2. If they greeted you → greet back AND mention you're "${ownerName}'s AI assistant"
+3. If they asked something → answer them clearly
+4. NEVER just repeat their exact words
+5. NEVER reply with just a greeting
+
+Example GOOD reply for "Hi":
+"Hi ${senderName}! I'm Anu, ${ownerName}'s AI assistant 🤖 How can I help you today? 💛"`;
+
+    const retry = await callGroq(SMART_MODEL, retryPrompt,
+      [...convHistory, { role: 'user', content: userContent }],
+      { maxTokens: 250, timeoutMs: 6000, temperature: 0.85 }
+    );
+
+    if (retry.ok && retry.content && retry.content.length > 20 && !isWeakReply(retry.content, userContent)) {
+      return retry.content;
+    }
+  }
+
+  // Final fallback with identity
+  return `Hi ${senderName}! I'm Anu, ${ownerName}'s AI assistant. How can I help you? 💛`;
 }
 
-/* ------------------ PHOTO ANALYSIS ------------------ */
+/* ═══════════════════════════════════════════════════════════
+   PHOTO ANALYSIS
+   ═══════════════════════════════════════════════════════════ */
 async function analyzePhoto(ownerName, senderName, history, userText, isFirst) {
   if (isFirst) {
     const introPrompt = buildFirstContactPrompt(ownerName, senderName);
     const contextText = userText
       ? `[${senderName} sent a photo with caption: "${userText}"]`
       : `[${senderName} sent a photo]`;
+
     const r = await callGroq(SMART_MODEL, introPrompt,
-      [{ role: 'user', content: `${contextText}\n\nAcknowledge the photo AND introduce yourself warmly with the two options.` }],
+      [{ role: 'user', content: `${contextText}\n\nAcknowledge the photo AND introduce yourself warmly with the two options. MUST include "Anu".` }],
       { maxTokens: 300, timeoutMs: 6000, temperature: 0.85 }
     );
-    return r.ok ? r.content : `Nice photo! I'm Anu, ${ownerName}'s assistant. What can I help with? 💛`;
+
+    if (r.ok && r.content && /anu/i.test(r.content)) return r.content;
+    return `Nice photo! I'm Anu, ${ownerName}'s AI assistant 🤖\nWant me to forward to ${ownerName}, or can I help you here? 💛`;
   }
 
   const sysPrompt = buildSystemPrompt(ownerName, senderName, history);
@@ -582,20 +647,22 @@ async function analyzePhoto(ownerName, senderName, history, userText, isFirst) {
 
   const r = await callGroq(SMART_MODEL, sysPrompt,
     [...history.slice(-6).map(h => ({ role: h.role, content: h.content })),
-     { role: 'user', content: `${contextText}\n\nReact warmly and briefly. ONE sentence.` }],
+     { role: 'user', content: `${contextText}\n\nReact warmly and briefly. ONE or TWO short sentences.` }],
     { maxTokens: 200, timeoutMs: 5000, temperature: 0.85 }
   );
 
   return r.ok && r.content ? r.content : "Nice one! 😊";
 }
 
-/* ------------------ MAIN HANDLER ------------------ */
+/* ═══════════════════════════════════════════════════════════
+   MAIN HANDLER
+   ═══════════════════════════════════════════════════════════ */
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
-      status: 'Anu Master Bot v11.0',
-      identity: `Anu — Ananya's AI assistant`,
-      features: ['first-contact', 'council', 'fast', 'photo', 'manual-reply']
+      status: 'Anu Master Bot v12.0',
+      identity: 'Anu — Ananya\'s AI assistant',
+      features: ['first-contact', 'council', 'fast', 'photo', 'manual-reply', 'no-spam']
     });
   }
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
@@ -631,7 +698,9 @@ export default async function handler(req, res) {
 
   const isOwner = (fromId) => OWNER_CHAT_ID && String(fromId) === String(OWNER_CHAT_ID);
 
-  /* ==================== DIRECT MESSAGES ==================== */
+  /* ══════════════════════════════════════════════════════════
+     DIRECT MESSAGES
+     ══════════════════════════════════════════════════════════ */
   const dm = update.message;
   if (dm) {
     const fromId = dm.from?.id;
@@ -639,7 +708,7 @@ export default async function handler(req, res) {
     const txt = (dm.text || dm.caption || '').trim();
     const isFromOwner = isOwner(fromId);
 
-    /* --- OWNER REPLY --- */
+    /* ─── 1️⃣ OWNER REPLY TO NOTIFICATION ─── */
     if (isFromOwner && dm.reply_to_message) {
       const repliedId = dm.reply_to_message.message_id;
       console.log('[Anu] ═══ OWNER REPLY ═══ to:', repliedId);
@@ -684,13 +753,13 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    /* --- /start --- */
+    /* ─── 2️⃣ /start ─── */
     if (txt === '/start') {
       if (isFromOwner) {
         await tg('sendMessage', {
           chat_id: chatId,
           text:
-            `✅ *Anu Master Bot v11.0*\n\n` +
+            `✅ *Anu Master Bot v12.0*\n\n` +
             `🤖 Anu — ${OWNER_NAME}'s AI assistant\n\n` +
             `/start · /stats · /pause · /resume · /send · /help\n\n` +
             `💡 Reply to any notification to send your own reply!`,
@@ -719,7 +788,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    /* --- /help --- */
+    /* ─── 3️⃣ /help ─── */
     if (txt === '/help') {
       await tg('sendMessage', {
         chat_id: chatId,
@@ -731,7 +800,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    /* --- OWNER commands --- */
+    /* ─── 4️⃣ OWNER COMMANDS ─── */
     if (isFromOwner && txt === '/stats') {
       const day = new Date().toISOString().split('T')[0];
       const s = await fsGet('bot_analytics', day) || {};
@@ -780,7 +849,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    /* --- NON-OWNER DIRECT MESSAGE --- */
+    /* ─── 5️⃣ NON-OWNER DIRECT MESSAGE ─── */
     if (!isFromOwner && txt && !txt.startsWith('/')) {
       console.log('[Anu] Non-owner DM from', fromId);
 
@@ -828,14 +897,17 @@ export default async function handler(req, res) {
         track('first_contacts').catch(() => {});
       }
 
-      /* Escalation */
+      /* ═══ ESCALATION — only if wants owner OR urgent/angry ═══ */
       const sentiment = detectSentiment(txt);
       const needsOwner = wantsOwner(txt);
-      if ((needsOwner || sentiment === 'urgent' || sentiment === 'angry') && OWNER_CHAT_ID) {
+      const shouldEscalate = needsOwner || sentiment === 'urgent' || sentiment === 'angry';
+
+      if (shouldEscalate && OWNER_CHAT_ID) {
+        console.log('[Anu] 🔔 Escalating to owner');
         let emoji = '🔔', label = 'Message';
         if (sentiment === 'urgent') { emoji = '🚨'; label = 'URGENT'; }
         else if (sentiment === 'angry') { emoji = '😠'; label = 'Angry'; }
-        else if (needsOwner) { emoji = '📩'; label = 'Wants attention'; }
+        else if (needsOwner) { emoji = '📩'; label = 'Wants your attention'; }
 
         const notif = await tg('sendMessage', {
           chat_id: OWNER_CHAT_ID,
@@ -866,7 +938,9 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true });
   }
 
-  /* ==================== BUSINESS MESSAGES ==================== */
+  /* ══════════════════════════════════════════════════════════
+     BUSINESS MESSAGES
+     ══════════════════════════════════════════════════════════ */
   const message = update.business_message || update.edited_business_message;
   if (!message) return res.status(200).json({ ok: true });
 
@@ -906,6 +980,7 @@ export default async function handler(req, res) {
 
   const introduced = await hasIntroduced(chatId);
   const isFirst = !introduced;
+  console.log('[Anu] Business — isFirst:', isFirst);
 
   await fsSet('bot_active_chats', String(chatId), {
     businessConnectionId: bizConnId,
@@ -955,10 +1030,13 @@ export default async function handler(req, res) {
 
   await saveHistory(chatId, userText || '[photo]', finalReply, firstName);
 
-  /* Escalation */
+  /* ═══ ESCALATION — only if wants owner OR urgent/angry ═══ */
   const sentiment = detectSentiment(userText);
   const needsOwner = wantsOwner(userText);
-  if ((needsOwner || sentiment === 'urgent' || sentiment === 'angry') && OWNER_CHAT_ID) {
+  const shouldEscalate = needsOwner || sentiment === 'urgent' || sentiment === 'angry';
+
+  if (shouldEscalate && OWNER_CHAT_ID) {
+    console.log('[Anu] 🔔 Escalating to owner (business)');
     let emoji = '🔔', label = 'Message';
     if (sentiment === 'urgent') { emoji = '🚨'; label = 'URGENT'; }
     else if (sentiment === 'angry') { emoji = '😠'; label = 'Angry'; }
@@ -985,14 +1063,6 @@ export default async function handler(req, res) {
       });
     }
     await track('escalations').catch(() => {});
-  }
-
-  if (!isBusinessHours() && OWNER_CHAT_ID) {
-    await tg('sendMessage', {
-      chat_id: OWNER_CHAT_ID,
-      text: `🌙 _After-hours: ${firstName} — "${(userText || '[photo]').slice(0, 80)}"_`,
-      parse_mode: 'Markdown'
-    }).catch(() => {});
   }
 
   return res.status(200).json({ ok: true });
