@@ -1,152 +1,112 @@
 /* ============================================================
-   Anu Assistant Bot v13.0
+   Anu Assistant Bot v14.0
    ------------------------------------------------------------
-   ✅ Single file, no Firebase
-   ✅ Only master AI (openai/gpt-oss-120b)
-   ✅ Always identifies as Ananya's assistant
-   ✅ Deep reasoning + natural language
-   ✅ Owner manual reply via /send or reply-to-notification
-   ✅ Amharic + English + Amharic-in-Latin (perfect matching)
-   ✅ No parroting, no spam, no leaks
+   ✅ Single file, no Firebase (Upstash Redis for state)
+   ✅ Master AI (openai/gpt-oss-120b)
+   ✅ Always identifies as "Anu, Ananya's assistant"
+   ✅ Daily status — resets automatically at midnight
+   ✅ Owner commands work
+   ✅ Reply-to-notification works
+   ✅ Amharic + English + Latin matching
    ============================================================ */
 
 const SMART_MODEL = 'openai/gpt-oss-120b';
-const VISION_MODEL = 'qwen/qwen3.8-27b';
 
 /* ═══════════════════════════════════════════════════════════
-   IN-MEMORY CACHE (per warm instance only)
+   UPSTASH REDIS — REST API
    ═══════════════════════════════════════════════════════════ */
-const introduced = new Set();
-const history = new Map();
-const paused = { global: false };
+const UP_URL = process.env.UPSTASH_REDIS_REST_URL;
+const UP_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 
-function prune() {
-  if (history.size > 200) {
-    const keys = [...history.keys()].slice(0, 100);
-    keys.forEach(k => history.delete(k));
-  }
+async function kvGet(key) {
+  if (!UP_URL || !UP_TOKEN) return null;
+  try {
+    const r = await fetch(`${UP_URL}/get/${encodeURIComponent(key)}`, {
+      headers: { Authorization: `Bearer ${UP_TOKEN}` }
+    });
+    const data = await r.json();
+    return data.result || null;
+  } catch (e) { return null; }
 }
 
-function getHistory(chatId) {
+async function kvSet(key, value, ttlSec) {
+  if (!UP_URL || !UP_TOKEN) return false;
+  try {
+    let url = `${UP_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}`;
+    if (ttlSec) url += `/ex/${ttlSec}`;
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${UP_TOKEN}` } });
+    return r.ok;
+  } catch (e) { return false; }
+}
+
+async function kvDel(key) {
+  if (!UP_URL || !UP_TOKEN) return;
+  try {
+    await fetch(`${UP_URL}/del/${encodeURIComponent(key)}`, {
+      headers: { Authorization: `Bearer ${UP_TOKEN}` }
+    });
+  } catch (e) {}
+}
+
+/* Seconds until local midnight */
+function secondsUntilMidnight() {
+  const now = new Date();
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+  return Math.floor((midnight.getTime() - now.getTime()) / 1000);
+}
+
+function todayKey() {
+  return new Date().toISOString().split('T')[0];
+}
+
+/* ═══════════════════════════════════════════════════════════
+   IN-MEMORY HISTORY (per warm instance)
+   ═══════════════════════════════════════════════════════════ */
+const history = new Map();
+
+function getHist(chatId) {
   return history.get(String(chatId)) || [];
 }
 
-function addHistory(chatId, role, content) {
-  const key = String(chatId);
-  const h = history.get(key) || [];
+function addHist(chatId, role, content) {
+  const k = String(chatId);
+  const h = history.get(k) || [];
   h.push({ role, content });
-  history.set(key, h.slice(-10));
-  prune();
+  history.set(k, h.slice(-10));
+  if (history.size > 100) {
+    const keys = [...history.keys()].slice(0, 50);
+    keys.forEach(x => history.delete(x));
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════
-   MASTER SYSTEM PROMPT
+   STATUS HELPERS
    ═══════════════════════════════════════════════════════════ */
-function systemPrompt(ownerName, senderName) {
-  return `You are **Anu** — the personal AI assistant of **${ownerName}**, a warm Ethiopian man.
+async function getStatus() {
+  const raw = await kvGet('bot_status');
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw);
+    if (data.date !== todayKey()) return null; // expired
+    return data;
+  } catch (e) { return null; }
+}
 
-═══════════════════════════════════════════
-🎯 YOUR CORE IDENTITY (NEVER FORGET)
-═══════════════════════════════════════════
-- Your name: **Anu**
-- You are **${ownerName}'s AI assistant**
-- You work FOR ${ownerName} — you are NOT ${ownerName}
-- Speak about ${ownerName} in THIRD PERSON always
-- NEVER say "I am ${ownerName}"
-- ✅ Say: "${ownerName} is my boss", "I'll tell ${ownerName}", "I'm Anu, ${ownerName}'s assistant"
+async function setStatus(text, setBy) {
+  const data = { text, date: todayKey(), setBy, setAt: Date.now() };
+  const ttl = secondsUntilMidnight();
+  await kvSet('bot_status', JSON.stringify(data), ttl);
+  return data;
+}
 
-═══════════════════════════════════════════
-🚨 CRITICAL: EVERY REPLY MUST FOLLOW THESE
-═══════════════════════════════════════════
-1. **ALWAYS identify as Anu, ${ownerName}'s assistant** — even on greetings
-2. **Be brief and warm** — 2 short sentences (like real texting)
-3. **Match the EXACT language style** — see below
-4. **NEVER echo their exact words back**
-5. **NEVER reply with just "Hi!" or 1 word**
-6. **NEVER reveal AI model names** (ChatGPT, GPT, Llama, Qwen, Groq)
-7. **NEVER show reasoning or thinking**
-8. **If they want ${ownerName}** → "I'll let ${ownerName} know right away 🙏"
-9. **If they ask a question** → answer it helpfully
-10. **If unsure** → "Let me check with ${ownerName} 🙏"
-
-═══════════════════════════════════════════
-🌍 LANGUAGE MATCHING (CRITICAL)
-═══════════════════════════════════════════
-Match the sender's EXACT style:
-
-1. **Amharic (Ge'ez script)** — reply in Amharic:
-   "ሰላም" → "ሰላም! እኔ Anu ነኝ — የ ${ownerName} ረዳት 😊 ምን ልርዳህ?"
-   "እንደምን ነህ?" → "ደህና ነኝ! አንተስ? እኔ Anu ነኝ — የ ${ownerName} ረዳት 😊"
-
-2. **English** — reply in English:
-   "Hi" → "Hi! I'm Anu, ${ownerName}'s AI assistant 😊 How can I help you?"
-   "How are you?" → "I'm doing great, thanks! I'm Anu, ${ownerName}'s assistant. What can I help you with? 💛"
-
-3. **Amharic-in-Latin (VERY IMPORTANT)** — reply in SAME STYLE:
-   "selam" → "selam! ene Anu negn — ye ${ownerName} redat 😊 min lirdah?"
-   "salam" → "salam! ene Anu negn, ye ${ownerName} redat. endet liredah? 😊"
-   "dehna neh?" → "dehna negn, amesegnalehu! ene Anu negn — ye ${ownerName} redat 😊"
-   "amesegenalew" → "amesegnalehu! 😊 ene Anu negn, min lirdah?"
-   "man neh?" → "ene Anu negn — ye ${ownerName} redat 😊 antes?"
-   "hi" → "Hi! ene Anu negn, ye ${ownerName} redat. endet liredah? 😊"
-
-4. **Mixed** — match dominant language
-5. **Emojis** — mirror them naturally
-
-═══════════════════════════════════════════
-🇪🇹 ETHIOPIAN WORD CHOICE (NATURAL)
-═══════════════════════════════════════════
-- ደህና ነህ? (male) / ደህና ነሽ? (female)
-- እንዴት ነህ? / እንዴት ነሽ?
-- ጤና ይስጥልኝ
-- አመሰግናለሁ / amesegnalehu
-- እሺ (okay)
-- ምን ልርዳህ? (what can I help with?)
-- ሰላም (peace/hello)
-
-Match gender when inferrable from name.
-
-═══════════════════════════════════════════
-🎭 EXAMPLE REPLIES
-═══════════════════════════════════════════
-User: "Hi"
-✅ GOOD: "Hi! I'm Anu, ${ownerName}'s AI assistant 😊 How can I help you today?"
-❌ BAD: "Hi!" (echo)
-
-User: "selam"
-✅ GOOD: "selam! ene Anu negn — ye ${ownerName} redat 😊 min lirdah?"
-❌ BAD: "selam!" (echo)
-
-User: "Ananya ን አሳውቅ"
-✅ GOOD: "እሺ! ${ownerName} ን አሳውቀዋለሁ 🙏"
-❌ BAD: "Ananya ን አሳውቅ" (echo)
-
-User: "How can I contact Ananya?"
-✅ GOOD: "I'm Anu, ${ownerName}'s assistant. Leave your message here and I'll forward it to him 🙏"
-
-═══════════════════════════════════════════
-📸 PHOTOS
-═══════════════════════════════════════════
-Warm genuine reaction, ONE or TWO short sentences:
-"I'm Anu, ${ownerName}'s assistant. Nice photo! What can I help you with? 😊"
-
-═══════════════════════════════════════════
-😠 INSULTS
-═══════════════════════════════════════════
-NEVER insult back. Stay calm:
-"ምንም አይደለም፣ እንዴት ልርዳህ እችላለሁ?"
-
-═══════════════════════════════════════════
-🚨 OUTPUT FORMAT
-═══════════════════════════════════════════
-Output ONLY the reply text — no reasoning, no drafts, no explanation.
-Just the natural reply as Anu.`;
+async function clearStatus() {
+  await kvDel('bot_status');
 }
 
 /* ═══════════════════════════════════════════════════════════
-   GROQ API CALL
+   GROQ AI
    ═══════════════════════════════════════════════════════════ */
-async function callAI(modelId, sysPrompt, messages, opts = {}) {
+async function callAI(sysPrompt, messages, opts = {}) {
   const key = process.env.GROQ_API_KEY;
   if (!key) return { ok: false, error: 'No API key' };
 
@@ -161,9 +121,9 @@ async function callAI(modelId, sysPrompt, messages, opts = {}) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: modelId,
+        model: SMART_MODEL,
         messages: [{ role: 'system', content: sysPrompt }, ...messages],
-        temperature: opts.temperature ?? 0.75,
+        temperature: opts.temperature ?? 0.8,
         max_tokens: opts.maxTokens || 350,
         reasoning_effort: 'low'
       }),
@@ -183,7 +143,7 @@ async function callAI(modelId, sysPrompt, messages, opts = {}) {
     let content = data.choices?.[0]?.message?.content?.trim() || '';
     if (!content) return { ok: false, error: 'Empty' };
 
-    content = cleanResponse(content);
+    content = cleanResp(content);
     return { ok: true, content };
   } catch (e) {
     clearTimeout(tId);
@@ -191,46 +151,115 @@ async function callAI(modelId, sysPrompt, messages, opts = {}) {
   }
 }
 
-/* Strip reasoning leaks and clean up */
-function cleanResponse(text) {
+function cleanResp(text) {
   if (!text) return text;
   let t = text;
-
-  // Remove think tags
   t = t.replace(/ thinking[\s\S]*?<\/think>/gi, '');
   t = t.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '');
-
-  // Remove reasoning headers
   t = t.replace(/^(#{1,6}\s*)?(thinking|reasoning|chain of thought|analysis|my thought process|let me think|draft|tone|language):[\s\S]*?(?=\n\n[A-Z\u1200-\u137F]|\n#{1,6}\s|$)/gim, '');
-
-  // If response is literally just a draft pattern
   const draftMatch = t.match(/draft:\s*"([^"]+)"/i);
-  if (draftMatch && t.length < 300) {
-    t = draftMatch[1];
-  }
-
+  if (draftMatch && t.length < 300) t = draftMatch[1];
   return t.trim();
 }
 
-/* Detect weak/echo/parroting reply */
-function isWeakReply(reply, userText, ownerName) {
+/* ═══════════════════════════════════════════════════════════
+   SYSTEM PROMPT
+   ═══════════════════════════════════════════════════════════ */
+function sysPrompt(ownerName, senderName, status) {
+  const statusBlock = status
+    ? `\n\n═══════════════════════════════════════════\n📢 TODAY'S STATUS FROM ${ownerName.toUpperCase()}\n═══════════════════════════════════════════\n${status.text}\n\nIf the sender asks about ${ownerName} or where he is, mention this status naturally.`
+    : '';
+
+  return `You are **Anu** — the AI assistant of **${ownerName}**, a warm Ethiopian man.
+
+═══════════════════════════════════════════
+🎯 IDENTITY (NEVER FORGET)
+═══════════════════════════════════════════
+- Your name: **Anu**
+- You are ${ownerName}'s AI assistant
+- You work FOR ${ownerName} — you are NOT ${ownerName}
+- Speak about ${ownerName} in THIRD PERSON
+- ❌ NEVER: "I am ${ownerName}"
+- ✅ YES: "${ownerName} is my boss", "I'll tell ${ownerName}"
+
+═══════════════════════════════════════════
+🚨 CRITICAL RULES FOR EVERY REPLY
+═══════════════════════════════════════════
+1. ALWAYS identify as "Anu, ${ownerName}'s assistant" — especially on greetings
+2. Be brief and warm — 2 short sentences
+3. Match the sender's EXACT language style
+4. NEVER echo their words
+5. NEVER reply with just 1 word
+6. NEVER reveal AI model names
+7. NEVER show reasoning
+8. If they want ${ownerName} → "I'll let ${ownerName} know 🙏"
+9. If they ask a question → answer helpfully
+10. If unsure → "Let me check with ${ownerName} 🙏"
+
+═══════════════════════════════════════════
+🌍 LANGUAGE MATCHING
+═══════════════════════════════════════════
+Match the EXACT style:
+
+1. **Amharic (Ge'ez)**:
+   "ሰላም" → "ሰላም! እኔ Anu ነኝ — የ ${ownerName} ረዳት 😊 ምን ልርዳህ?"
+   "እንደምን ነህ?" → "ደህና ነኝ! አንተስ? እኔ Anu ነኝ — የ ${ownerName} ረዳት 😊"
+
+2. **English**:
+   "Hi" → "Hi! I'm Anu, ${ownerName}'s AI assistant 😊 How can I help you?"
+   "How are you?" → "I'm great, thanks! I'm Anu, ${ownerName}'s assistant. What can I help with? 💛"
+
+3. **Amharic-in-Latin**:
+   "selam" → "selam! ene Anu negn — ye ${ownerName} redat 😊 min lirdah?"
+   "salam" → "salam! ene Anu negn, ye ${ownerName} redat. endet liredah? 😊"
+   "dehna neh?" → "dehna negn, amesegnalehu! ene Anu negn — ye ${ownerName} redat 😊"
+   "man neh?" → "ene Anu negn — ye ${ownerName} redat 😊 antes?"
+   "hi" → "Hi! ene Anu negn, ye ${ownerName} redat. endet liredah? 😊"
+
+4. Match emojis naturally.
+
+═══════════════════════════════════════════
+🇪🇹 ETHIOPIAN WORD CHOICE
+═══════════════════════════════════════════
+- ደህና ነህ? / ደህና ነሽ?
+- እንዴት ነህ? / እንዴት ነሽ?
+- ጤና ይስጥልኝ
+- አመሰግናለሁ / amesegnalehu
+- እሺ
+- ምን ልርዳህ?
+
+═══════════════════════════════════════════
+📸 PHOTOS
+═══════════════════════════════════════════
+Warm genuine reaction, 1-2 short sentences:
+"Nice photo! I'm Anu, ${ownerName}'s assistant. What can I help with? 😊"
+
+═══════════════════════════════════════════
+😠 INSULTS
+═══════════════════════════════════════════
+NEVER insult back: "ምንም አይደለም፣ እንዴት ልርዳህ እችላለሁ?"
+
+═══════════════════════════════════════════
+🚨 OUTPUT FORMAT
+═══════════════════════════════════════════
+Output ONLY the reply. No reasoning, no drafts, no meta.${statusBlock}`;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   WEAK REPLY DETECTOR
+   ═══════════════════════════════════════════════════════════ */
+function isWeak(reply, userText) {
   if (!reply) return true;
   const r = reply.toLowerCase().trim();
   const u = (userText || '').toLowerCase().trim();
 
-  // Too short
   if (r.length < 20) return true;
-
-  // Exact echo
   if (r === u) return true;
-
-  // Greeting-only
   if (/^(hi|hello|hey|selam|salam|ሰላም|hi!|hello!|ሰላም!)[\s!?.😊🙏😄]*$/i.test(r)) return true;
 
-  // Doesn't mention "Anu" when it should
-  const shouldMentionAnu = /^(hi|hello|hey|selam|salam|ሰላም|man neh|who are you|who r u)/i.test(u) ||
-                            /(who are you|ማን ነህ|who r u)/i.test(u);
-  if (shouldMentionAnu && !/anu/i.test(r)) return true;
+  // Greeting should include "Anu"
+  const isGreeting = /^(hi|hello|hey|selam|salam|ሰላም|man neh|who are you|who r u)/i.test(u);
+  if (isGreeting && !/anu/i.test(r)) return true;
 
   return false;
 }
@@ -238,18 +267,18 @@ function isWeakReply(reply, userText, ownerName) {
 /* ═══════════════════════════════════════════════════════════
    GENERATE REPLY
    ═══════════════════════════════════════════════════════════ */
-async function generateReply(ownerName, senderName, userText, chatId, isFirst) {
-  const sys = systemPrompt(ownerName, senderName);
-  const hist = getHistory(chatId).slice(-6).map(h => ({ role: h.role, content: h.content }));
+async function generateReply(ownerName, senderName, userText, chatId, isFirst, status) {
+  const sys = sysPrompt(ownerName, senderName, status);
+  const hist = getHist(chatId).slice(-6).map(h => ({ role: h.role, content: h.content }));
 
-  // First contact → force intro
+  // First contact — force intro
   if (isFirst) {
     const introPrompt = `${sys}
 
 ═══════════════════════════════════════════
-🎯 FIRST CONTACT — SPECIAL INSTRUCTION
+🎯 FIRST CONTACT — SPECIAL
 ═══════════════════════════════════════════
-This is the FIRST time "${senderName}" is messaging you.
+This is the FIRST message from "${senderName}".
 - Introduce yourself as "Anu, ${ownerName}'s AI assistant"
 - Give them TWO options:
   1. Send a message to ${ownerName} (you'll forward it)
@@ -258,107 +287,100 @@ This is the FIRST time "${senderName}" is messaging you.
 - Match their language EXACTLY
 - Keep it short (2-3 sentences)`;
 
-    const r = await callAI(SMART_MODEL, introPrompt,
-      [{ role: 'user', content: userText }],
-      { maxTokens: 300, temperature: 0.85 }
-    );
+    const r = await callAI(introPrompt, [{ role: 'user', content: userText }], { maxTokens: 300, temperature: 0.85 });
 
     if (r.ok && /anu/i.test(r.content) && r.content.length > 30) {
+      addHist(chatId, 'user', userText);
+      addHist(chatId, 'assistant', r.content);
       return r.content;
     }
 
-    // Fallback guaranteed intro
     const isAmharic = /[\u1200-\u137F]/.test(userText);
-    if (isAmharic) {
-      return `ሰላም ${senderName}! እኔ Anu ነኝ — የ ${ownerName} ረዳት 🤖\nጥያቄ ልርዳህ ወይስ ለ ${ownerName} መልእክት ልላክ?\nምን ትፈልጋለህ? 💛`;
-    }
-    return `Hi ${senderName}! I'm Anu, ${ownerName}'s AI assistant 🤖\nI can help with questions or forward a message to ${ownerName}.\nWhat would you like? 💛`;
+    const isLatin = /(selam|salam|dehna|endet|amesegn)/i.test(userText);
+    let fallback;
+    if (isAmharic) fallback = `ሰላም ${senderName}! እኔ Anu ነኝ — የ ${ownerName} ረዳት 🤖\nጥያቄ ልርዳህ ወይስ ለ ${ownerName} መልእክት ልላክ?\nምን ትፈልጋለህ? 💛`;
+    else if (isLatin) fallback = `selam ${senderName}! ene Anu negn — ye ${ownerName} redat 🤖\nQuestion lirdah weys le ${ownerName} message lilak?\nMin tefelgalh? 💛`;
+    else fallback = `Hi ${senderName}! I'm Anu, ${ownerName}'s AI assistant 🤖\nI can help with questions or forward a message to ${ownerName}.\nWhat would you like? 💛`;
+
+    addHist(chatId, 'user', userText);
+    addHist(chatId, 'assistant', fallback);
+    return fallback;
   }
 
-  // Regular → single master AI call
+  // Regular
   const userContent = `${senderName}: "${userText}"`;
-  const r = await callAI(SMART_MODEL, sys,
-    [...hist, { role: 'user', content: userContent }],
-    { maxTokens: 300, temperature: 0.8 }
-  );
+  const r = await callAI(sys, [...hist, { role: 'user', content: userContent }], { maxTokens: 300, temperature: 0.8 });
 
-  if (r.ok && !isWeakReply(r.content, userText, ownerName)) {
-    addHistory(chatId, 'user', userText);
-    addHistory(chatId, 'assistant', r.content);
+  if (r.ok && !isWeak(r.content, userText)) {
+    addHist(chatId, 'user', userText);
+    addHist(chatId, 'assistant', r.content);
     return r.content;
   }
 
-  // Retry if weak
+  // Retry
   if (r.ok) {
     console.warn('[Anu] Weak reply, retrying:', r.content?.slice(0, 60));
-    const retryPrompt = `${sys}
+    const retrySys = `${sys}
 
-🚨 YOUR PREVIOUS REPLY WAS TOO WEAK (short/echo/no identity).
-Try again. REQUIREMENTS:
-- Include "Anu" and "${ownerName}'s assistant" 
+🚨 YOUR PREVIOUS REPLY WAS TOO WEAK.
+Requirements:
+- Include "Anu" and "${ownerName}'s assistant"
 - At least 2 short sentences
-- Match the sender's exact language style
+- Match sender's exact language
 - Warm and helpful`;
 
-    const retry = await callAI(SMART_MODEL, retryPrompt,
-      [{ role: 'user', content: userContent }],
-      { maxTokens: 300, temperature: 0.9 }
-    );
+    const retry = await callAI(retrySys, [{ role: 'user', content: userContent }], { maxTokens: 300, temperature: 0.9 });
 
-    if (retry.ok && retry.content.length > 20 && !isWeakReply(retry.content, userText, ownerName)) {
-      addHistory(chatId, 'user', userText);
-      addHistory(chatId, 'assistant', retry.content);
+    if (retry.ok && retry.content.length > 20 && !isWeak(retry.content, userText)) {
+      addHist(chatId, 'user', userText);
+      addHist(chatId, 'assistant', retry.content);
       return retry.content;
     }
   }
 
-  // Final guaranteed fallback
+  // Guaranteed fallback
   const isAmharic = /[\u1200-\u137F]/.test(userText);
   const isLatin = /(selam|salam|dehna|endet|amesegn)/i.test(userText);
+  let fb;
+  if (isAmharic) fb = `ሰላም! እኔ Anu ነኝ — የ ${ownerName} ረዳት 😊 ምን ልርዳህ?`;
+  else if (isLatin) fb = `selam! ene Anu negn — ye ${ownerName} redat 😊 min lirdah?`;
+  else fb = `Hi! I'm Anu, ${ownerName}'s assistant 😊 How can I help?`;
 
-  if (isAmharic) {
-    return `ሰላም! እኔ Anu ነኝ — የ ${ownerName} ረዳት 😊 ምን ልርዳህ?`;
-  }
-  if (isLatin) {
-    return `selam! ene Anu negn — ye ${ownerName} redat 😊 min lirdah?`;
-  }
-  return `Hi! I'm Anu, ${ownerName}'s assistant 😊 How can I help you?`;
+  addHist(chatId, 'user', userText);
+  addHist(chatId, 'assistant', fb);
+  return fb;
 }
 
 /* ═══════════════════════════════════════════════════════════
-   ANALYZE PHOTO
+   PHOTO
    ═══════════════════════════════════════════════════════════ */
-async function analyzePhoto(ownerName, senderName, userText, isFirst) {
-  const sys = systemPrompt(ownerName, senderName);
-  const contextText = userText
+async function analyzePhoto(ownerName, senderName, userText, isFirst, status) {
+  const sys = sysPrompt(ownerName, senderName, status);
+  const ctx = userText
     ? `[${senderName} sent a photo with caption: "${userText}"]`
     : `[${senderName} sent a photo]`;
 
   const instruction = isFirst
-    ? `${contextText}\n\nAcknowledge the photo AND introduce yourself as "Anu, ${ownerName}'s assistant". Offer to help or forward message.`
-    : `${contextText}\n\nReact warmly (ONE or TWO sentences). If greeting, include your identity.`;
+    ? `${ctx}\n\nAcknowledge the photo AND introduce yourself as "Anu, ${ownerName}'s assistant". Offer to help or forward.`
+    : `${ctx}\n\nReact warmly — 1-2 sentences. If greeting, include your identity.`;
 
-  const r = await callAI(SMART_MODEL, sys,
-    [{ role: 'user', content: instruction }],
-    { maxTokens: 250, temperature: 0.85 }
-  );
+  const r = await callAI(sys, [{ role: 'user', content: instruction }], { maxTokens: 250, temperature: 0.85 });
 
   if (r.ok && r.content && r.content.length > 15) {
     if (isFirst && !/anu/i.test(r.content)) {
-      return `Nice photo! I'm Anu, ${ownerName}'s assistant 😊 What can I help you with?`;
+      return `Nice photo! I'm Anu, ${ownerName}'s assistant 😊 What can I help with?`;
     }
     return r.content;
   }
-
   return `Nice photo! I'm Anu, ${ownerName}'s assistant 😊 How can I help?`;
 }
 
 /* ═══════════════════════════════════════════════════════════
-   DETECTION HELPERS
+   DETECTION
    ═══════════════════════════════════════════════════════════ */
 function wantsOwner(text) {
   const t = (text || '').toLowerCase();
-  return /(ananya|anani|owner|boss|speak to|talk to|important|urgent|meet|meeting|business|tell her|tell him|notify|reach her|reach him|contact her|contact him|let her know|let him know|pass this|forward this|አናንያ|አናኒ|ባለቤት|አስቸኳይ|አስፈላጊ|ንግድ|ጉዳይ|ስብሰባ|ቀጠሮ|ንገረው|ንገራት|ንገረኝ|አሳውቅ|አሳውቂ|አሳውቀው|አስታውቅ|ጥራው|ጥራት|ጥሪው|ደውል|ደውልለት|ደውልላት|አግኝ|አግኚ|ተናገር|ልናገር|ልናገራት|ልናገረው|nigerew|nigerat|nigeren|asawq|asekayi|asfelagi|guday|sbsba|qetro|traw|tirat|dewil|agen|nager|lenager|lenagrat|lenagerew)/i.test(t);
+  return /(ananya|anani|አናንያ|አናኒ|owner|boss|speak to|talk to|important|urgent|meet|meeting|business|tell her|tell him|notify|reach her|reach him|contact her|contact him|let her know|let him know|pass this|forward this|ባለቤት|አስቸኳይ|አስፈላጊ|ንግድ|ጉዳይ|ስብሰባ|ቀጠሮ|ንገረው|ንገራት|ንገረኝ|አሳውቅ|አሳውቂ|አሳውቀው|አስታውቅ|ጥራው|ጥራት|ጥሪው|ደውል|ደውልለት|ደውልላት|አግኝ|አግኚ|ተናገር|ልናገር|ልናገራት|ልናገረው|nigerew|nigerat|nigeren|asawq|asekayi|asfelagi|guday|sbsba|qetro|traw|tirat|dewil|agen|nager|lenager|lenagrat|lenagerew)/i.test(t);
 }
 
 function detectSentiment(text) {
@@ -370,17 +392,11 @@ function detectSentiment(text) {
   return 'neutral';
 }
 
-/* ═══════════════════════════════════════════════════════════
-   PARSE REF MARKER (from reply-to-notification)
-   ═══════════════════════════════════════════════════════════ */
 function parseRef(text) {
   if (!text) return null;
   const m = text.match(/REF:([0-9-]+):([a-zA-Z0-9_-]+)/);
   if (!m) return null;
-  return {
-    chatId: m[1],
-    bizConnId: m[2] === 'direct' ? null : m[2]
-  };
+  return { chatId: m[1], bizConnId: m[2] === 'direct' ? null : m[2] };
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -389,9 +405,9 @@ function parseRef(text) {
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
-      status: 'Anu Assistant Bot v13.0',
+      status: 'Anu Assistant Bot v14.0',
       identity: 'Anu — Ananya\'s AI assistant',
-      model: SMART_MODEL
+      storage: UP_URL ? 'Upstash Redis' : 'memory-only'
     });
   }
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
@@ -399,9 +415,8 @@ export default async function handler(req, res) {
   const BOT_TOKEN = process.env.BUSINESS_BOT_TOKEN;
   const OWNER_CHAT_ID = process.env.OWNER_CHAT_ID;
   const OWNER_NAME = process.env.OWNER_NAME || 'Ananya';
-  const GROQ_KEY = process.env.GROQ_API_KEY;
 
-  if (!BOT_TOKEN || !GROQ_KEY) {
+  if (!BOT_TOKEN || !process.env.GROQ_API_KEY) {
     console.error('[Anu] Missing env vars');
     return res.status(200).end();
   }
@@ -442,34 +457,23 @@ export default async function handler(req, res) {
       const repliedText = dm.reply_to_message.text || dm.reply_to_message.caption || '';
       const ref = parseRef(repliedText);
 
-      console.log('[Anu] ═══ OWNER REPLY ═══');
-      console.log('[Anu] Target ref:', JSON.stringify(ref));
+      console.log('[Anu] Owner reply, ref:', JSON.stringify(ref));
 
       if (ref) {
         const payload = { chat_id: ref.chatId, text: txt };
         if (ref.bizConnId) payload.business_connection_id = ref.bizConnId;
 
-        const sendResult = await tg('sendMessage', payload);
-
-        if (sendResult && sendResult.ok) {
-          await tg('sendMessage', {
-            chat_id: chatId,
-            text: '✅ Sent',
-            reply_to_message_id: dm.message_id
-          });
-          console.log('[Anu] ✅ Manual reply routed');
-        } else {
-          await tg('sendMessage', {
-            chat_id: chatId,
-            text: `❌ Failed: \`${JSON.stringify(sendResult).slice(0, 100)}\``,
-            parse_mode: 'Markdown',
-            reply_to_message_id: dm.message_id
-          });
-        }
+        const sr = await tg('sendMessage', payload);
+        await tg('sendMessage', {
+          chat_id: chatId,
+          text: sr && sr.ok ? '✅ Sent' : `❌ Failed: \`${JSON.stringify(sr).slice(0, 100)}\``,
+          parse_mode: 'Markdown',
+          reply_to_message_id: dm.message_id
+        });
       } else {
         await tg('sendMessage', {
           chat_id: chatId,
-          text: '⚠️ Could not find target. Use: `/send <chat_id> <message>`',
+          text: '⚠️ Could not find target.\nUse: `/send <chat_id> <message>`',
           parse_mode: 'Markdown',
           reply_to_message_id: dm.message_id
         });
@@ -477,77 +481,126 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    /* ─── 2️⃣ /start ─── */
-    if (txt === '/start') {
-      if (isFromOwner) {
-        await tg('sendMessage', {
-          chat_id: chatId,
-          text:
-            `✅ *Anu Assistant Bot v13.0*\n\n` +
-            `🤖 Anu — ${OWNER_NAME}'s AI assistant\n\n` +
-            `*Commands:*\n` +
-            `/start — This menu\n` +
-            `/stats — Bot info\n` +
-            `/pause — Pause AI\n` +
-            `/resume — Resume AI\n` +
-            `/send <chat_id> <text> — Send message\n` +
-            `/help — Help\n\n` +
-            `💡 Reply to any notification to send your own reply`,
-          parse_mode: 'Markdown'
-        });
-      } else {
-        const senderName = dm.from?.first_name || 'there';
-        const firstName = senderName.split(' ')[0];
-        const isFirst = !introduced.has(String(chatId));
-
-        const reply = await generateReply(OWNER_NAME, firstName, '/start', chatId, isFirst);
-
-        await tg('sendMessage', { chat_id: chatId, text: reply });
-        if (isFirst) introduced.add(String(chatId));
-      }
-      return res.status(200).json({ ok: true });
-    }
-
-    /* ─── 3️⃣ /help ─── */
-    if (txt === '/help') {
+    /* ─── 2️⃣ OWNER /start ─── */
+    if (isFromOwner && txt === '/start') {
+      const status = await getStatus();
       await tg('sendMessage', {
         chat_id: chatId,
-        text: isFromOwner
-          ? `*Owner Commands*\n\n• Reply to notifications → direct reply\n• /send <chat_id> <text> — direct\n• /stats — info\n• /pause, /resume — control`
-          : `*How I help*\n\n💬 Ask me anything\n📩 Send message to ${OWNER_NAME}\n🚨 Say "Ananya" or "urgent" for attention\n😊 Amharic + English`,
+        text:
+          `✅ *Anu Assistant Bot v14.0*\n\n` +
+          `🤖 Anu — ${OWNER_NAME}'s AI assistant\n\n` +
+          `*Commands:*\n` +
+          `/start — This menu\n` +
+          `/status <text> — Set today's status (e.g. "ዛሬ አሞኛል")\n` +
+          `/status — Show current status\n` +
+          `/status clear — Clear status\n` +
+          `/stats — Bot info\n` +
+          `/pause — Pause AI\n` +
+          `/resume — Resume AI\n` +
+          `/send <chat_id> <text> — Direct message\n` +
+          `/help — Help\n\n` +
+          (status
+            ? `📢 *Current status:*\n_"${status.text}"_\n_(Auto-resets at midnight)_`
+            : `_No status set for today._`),
         parse_mode: 'Markdown'
       });
       return res.status(200).json({ ok: true });
     }
 
-    /* ─── 4️⃣ OWNER COMMANDS ─── */
+    /* ─── 3️⃣ OWNER /status ─── */
+    if (isFromOwner && (txt === '/status' || txt.startsWith('/status '))) {
+      const arg = txt.slice(8).trim();
+
+      // Show current
+      if (!arg) {
+        const status = await getStatus();
+        await tg('sendMessage', {
+          chat_id: chatId,
+          text: status
+            ? `📢 *Today's status:*\n_"${status.text}"_\n\n_Set at ${new Date(status.setAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}_\n_Auto-clears at midnight_`
+            : `ℹ️ No status set for today.\n\nUse: \`/status ዛሬ አሞኛል\``,
+          parse_mode: 'Markdown'
+        });
+        return res.status(200).json({ ok: true });
+      }
+
+      // Clear
+      if (arg === 'clear' || arg === 'delete' || arg === 'off') {
+        await clearStatus();
+        await tg('sendMessage', {
+          chat_id: chatId,
+          text: '✅ Status cleared for today.',
+          parse_mode: 'Markdown'
+        });
+        return res.status(200).json({ ok: true });
+      }
+
+      // Set
+      const newStatus = await setStatus(arg, OWNER_NAME);
+      const hrs = Math.round(secondsUntilMidnight() / 3600 * 10) / 10;
+      await tg('sendMessage', {
+        chat_id: chatId,
+        text:
+          `✅ *Status set!*\n\n` +
+          `📢 _"${arg}"_\n\n` +
+          `⏰ Auto-clears in ~${hrs} hours (at midnight)\n` +
+          `💬 Bot will tell senders this when they ask about you.`,
+        parse_mode: 'Markdown'
+      });
+      return res.status(200).json({ ok: true });
+    }
+
+    /* ─── 4️⃣ OWNER /help ─── */
+    if (isFromOwner && txt === '/help') {
+      await tg('sendMessage', {
+        chat_id: chatId,
+        text:
+          `*Owner Commands*\n\n` +
+          `• Reply to notifications → direct reply\n` +
+          `• /status <text> — Set today's status\n` +
+          `• /status clear — Remove status\n` +
+          `• /send <chat_id> <text> — Direct message\n` +
+          `• /pause, /resume — Control AI\n` +
+          `• /stats — Bot info`,
+        parse_mode: 'Markdown'
+      });
+      return res.status(200).json({ ok: true });
+    }
+
+    /* ─── 5️⃣ OWNER /stats ─── */
     if (isFromOwner && txt === '/stats') {
+      const status = await getStatus();
+      const paused = await kvGet('bot_paused');
       await tg('sendMessage', {
         chat_id: chatId,
         text:
           `📊 *Bot Status*\n\n` +
           `✅ Online\n` +
-          `🧠 Model: Master AI\n` +
-          `👥 Known chats (this instance): ${introduced.size}\n` +
-          `💾 History entries: ${history.size}\n` +
-          `⏸️ Paused: ${paused.global ? 'Yes' : 'No'}`,
+          `🧠 Model: Master AI (gpt-oss-120b)\n` +
+          `💾 Storage: ${UP_URL ? 'Upstash Redis' : 'Memory'}\n` +
+          `💬 History entries: ${history.size}\n` +
+          `⏸️ Paused: ${paused === '1' ? 'Yes' : 'No'}\n` +
+          `📢 Today status: ${status ? 'Set ✅' : 'None'}`,
         parse_mode: 'Markdown'
       });
       return res.status(200).json({ ok: true });
     }
 
+    /* ─── 6️⃣ OWNER /pause ─── */
     if (isFromOwner && txt === '/pause') {
-      paused.global = true;
-      await tg('sendMessage', { chat_id: chatId, text: '⏸️ AI paused' });
+      await kvSet('bot_paused', '1');
+      await tg('sendMessage', { chat_id: chatId, text: '⏸️ AI paused. Send /resume to restart.' });
       return res.status(200).json({ ok: true });
     }
 
+    /* ─── 7️⃣ OWNER /resume ─── */
     if (isFromOwner && txt === '/resume') {
-      paused.global = false;
-      await tg('sendMessage', { chat_id: chatId, text: '▶️ AI resumed' });
+      await kvSet('bot_paused', '0');
+      await tg('sendMessage', { chat_id: chatId, text: '▶️ AI resumed.' });
       return res.status(200).json({ ok: true });
     }
 
+    /* ─── 8️⃣ OWNER /send ─── */
     if (isFromOwner && txt.startsWith('/send ')) {
       const parts = txt.slice(6).trim().split(/\s+/);
       const targetId = parts.shift();
@@ -566,17 +619,22 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    /* ─── 5️⃣ NON-OWNER DIRECT MESSAGE ─── */
+    /* ─── 9️⃣ NON-OWNER — REGULAR USER ─── */
     if (!isFromOwner && txt && !txt.startsWith('/')) {
-      if (paused.global) return res.status(200).json({ ok: true });
+      const paused = await kvGet('bot_paused');
+      if (paused === '1') return res.status(200).json({ ok: true });
 
       const senderName = dm.from?.first_name || 'there';
       const firstName = senderName.split(' ')[0];
-      const isFirst = !introduced.has(String(chatId));
+
+      const introducedKey = `introduced:${chatId}`;
+      const wasIntroduced = await kvGet(introducedKey);
+      const isFirst = !wasIntroduced;
 
       console.log('[Anu] DM from', firstName, '| first:', isFirst);
 
-      const reply = await generateReply(OWNER_NAME, firstName, txt, chatId, isFirst);
+      const status = await getStatus();
+      const reply = await generateReply(OWNER_NAME, firstName, txt, chatId, isFirst, status);
 
       await tg('sendMessage', {
         chat_id: chatId,
@@ -584,14 +642,15 @@ export default async function handler(req, res) {
         reply_to_message_id: dm.message_id
       });
 
-      if (isFirst) introduced.add(String(chatId));
+      if (isFirst) {
+        await kvSet(introducedKey, '1', 60 * 60 * 24 * 30); // 30 days
+      }
 
-      /* ─── ESCALATION ─── */
+      // Escalation
       const sentiment = detectSentiment(txt);
       const needsOwner = wantsOwner(txt);
 
       if ((needsOwner || sentiment === 'urgent' || sentiment === 'angry') && OWNER_CHAT_ID) {
-        console.log('[Anu] 🔔 Escalating (DM)');
         let emoji = '🔔', label = 'Message';
         if (sentiment === 'urgent') { emoji = '🚨'; label = 'URGENT'; }
         else if (sentiment === 'angry') { emoji = '😠'; label = 'Angry'; }
@@ -614,6 +673,22 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
+    /* Non-owner /start */
+    if (!isFromOwner && txt === '/start') {
+      const senderName = dm.from?.first_name || 'there';
+      const firstName = senderName.split(' ')[0];
+      const introducedKey = `introduced:${chatId}`;
+      const wasIntroduced = await kvGet(introducedKey);
+      const isFirst = !wasIntroduced;
+
+      const status = await getStatus();
+      const reply = await generateReply(OWNER_NAME, firstName, '/start', chatId, isFirst, status);
+
+      await tg('sendMessage', { chat_id: chatId, text: reply });
+      if (isFirst) await kvSet(introducedKey, '1', 60 * 60 * 24 * 30);
+      return res.status(200).json({ ok: true });
+    }
+
     return res.status(200).json({ ok: true });
   }
 
@@ -633,7 +708,8 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true });
   }
 
-  if (paused.global) return res.status(200).json({ ok: true });
+  const paused = await kvGet('bot_paused');
+  if (paused === '1') return res.status(200).json({ ok: true });
 
   let userText = '';
   let isPhoto = false;
@@ -646,27 +722,28 @@ export default async function handler(req, res) {
   if (userText.startsWith('/')) return res.status(200).json({ ok: true });
 
   const firstName = senderName.split(' ')[0];
-  const isFirst = !introduced.has(String(chatId));
+  const introducedKey = `introduced:${chatId}`;
+  const wasIntroduced = await kvGet(introducedKey);
+  const isFirst = !wasIntroduced;
 
-  console.log('[Anu] Business msg from', firstName, '| first:', isFirst, '| photo:', isPhoto);
+  console.log('[Anu] Business from', firstName, '| first:', isFirst);
 
-  // Typing indicator
   tg('sendChatAction', {
     chat_id: chatId,
     action: isPhoto ? 'upload_photo' : 'typing',
     business_connection_id: bizConnId
   }).catch(() => {});
 
+  const status = await getStatus();
   let reply = '';
   if (isPhoto) {
-    reply = await analyzePhoto(OWNER_NAME, firstName, userText, isFirst);
+    reply = await analyzePhoto(OWNER_NAME, firstName, userText, isFirst, status);
   } else {
-    reply = await generateReply(OWNER_NAME, firstName, userText, chatId, isFirst);
+    reply = await generateReply(OWNER_NAME, firstName, userText, chatId, isFirst, status);
   }
 
   if (!reply) reply = `Hi! I'm Anu, ${OWNER_NAME}'s assistant 😊 How can I help?`;
 
-  // Small human delay
   await new Promise(r => setTimeout(r, Math.min(reply.length * 15, 1200)));
 
   await tg('sendMessage', {
@@ -676,14 +753,13 @@ export default async function handler(req, res) {
     reply_to_message_id: msgId
   });
 
-  if (isFirst) introduced.add(String(chatId));
+  if (isFirst) await kvSet(introducedKey, '1', 60 * 60 * 24 * 30);
 
-  /* ─── ESCALATION ─── */
+  // Escalation
   const sentiment = detectSentiment(userText);
   const needsOwner = wantsOwner(userText);
 
   if ((needsOwner || sentiment === 'urgent' || sentiment === 'angry') && OWNER_CHAT_ID) {
-    console.log('[Anu] 🔔 Escalating (business)');
     let emoji = '🔔', label = 'Message';
     if (sentiment === 'urgent') { emoji = '🚨'; label = 'URGENT'; }
     else if (sentiment === 'angry') { emoji = '😠'; label = 'Angry'; }
