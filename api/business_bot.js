@@ -1,11 +1,18 @@
 /* ============================================================
-   Anu Assistant Bot v15.1 — HTML Mode (Fixes Markdown Errors)
+   Anu Assistant Bot v16.0 — Final
+   ------------------------------------------------------------
+   ✅ Single file, no Firebase, no external storage
+   ✅ HTML parse mode (no markdown errors)
+   ✅ Clear identity on first contact
+   ✅ Natural conversation after intro
+   ✅ Ananya/ጥራው/አሳውቅ → notify owner
+   ✅ Reply-to-notification works
    ============================================================ */
 
 const SMART_MODEL = 'openai/gpt-oss-120b';
 
 /* ═══════════════════════════════════════════════════════════
-   HTML ESCAPE — for user-generated content
+   HTML ESCAPE
    ═══════════════════════════════════════════════════════════ */
 function esc(s) {
   return String(s || '')
@@ -81,7 +88,7 @@ async function callAI(sysPrompt, messages, opts = {}) {
       body: JSON.stringify({
         model: SMART_MODEL,
         messages: [{ role: 'system', content: sysPrompt }, ...messages],
-        temperature: opts.temperature ?? 0.8,
+        temperature: opts.temperature ?? 0.85,
         max_tokens: opts.maxTokens || 350,
         reasoning_effort: 'low'
       }),
@@ -128,66 +135,181 @@ function sysPrompt(ownerName, senderName, status) {
     ? `\n\n═══════════════════════════════════════════\n📢 TODAY'S STATUS FROM ${ownerName.toUpperCase()}\n═══════════════════════════════════════════\n${status.text}\n\nIf the sender asks about ${ownerName} or where he is, mention this status naturally.`
     : '';
 
-  return `You are **Anu** — the AI assistant of **${ownerName}**, a warm Ethiopian man.
+  return `You are **Anu** — the personal AI assistant of **${ownerName}**, a warm Ethiopian man.
 
 ═══════════════════════════════════════════
-🎯 IDENTITY (NEVER FORGET)
+🎯 IDENTITY (YOUR CORE)
 ═══════════════════════════════════════════
 - Your name: **Anu**
 - You are ${ownerName}'s AI assistant
 - You work FOR ${ownerName} — you are NOT ${ownerName}
 - Speak about ${ownerName} in THIRD PERSON
-- ❌ NEVER: "I am ${ownerName}"
-- ✅ YES: "${ownerName} is my boss", "I'll tell ${ownerName}"
+- ❌ NEVER say "I am ${ownerName}"
+- ✅ "${ownerName} is my boss", "I'll tell ${ownerName}"
 
 ═══════════════════════════════════════════
-🚨 CRITICAL RULES FOR EVERY REPLY
+🆔 IDENTITY RULES (CRITICAL)
 ═══════════════════════════════════════════
-1. ALWAYS identify as "Anu, ${ownerName}'s assistant" — especially on greetings
-2. Be brief and warm — 2 short sentences
-3. Match the sender's EXACT language style
-4. NEVER echo their words
-5. NEVER reply with just 1 word
-6. NEVER reveal AI model names
-7. NEVER show reasoning
-8. If they want ${ownerName} → "I'll let ${ownerName} know 🙏"
-9. If they ask a question → answer helpfully
-10. If unsure → "Let me check with ${ownerName} 🙏"
+
+**When to say "I'm Anu":**
+- ✅ FIRST message ever from this person (first contact)
+- ✅ They ask "who are you?" / "ማን ነህ?" / "who is this?"
+- ✅ They ask "are you ${ownerName}?" → "No, I'm Anu, his assistant"
+
+**When NOT to repeat "I'm Anu":**
+- ❌ After first intro — they already know
+- ❌ Regular conversation ("ok", "yes", "thanks", "lol")
+- ❌ Simple greetings ("selam", "wendme", "hi", "ሰላም", "bro")
+- ❌ Answering questions
+- ❌ Photos
+- ❌ Replying to "Ananya" mention
+
+After first contact, act like a FRIEND who happens to be ${ownerName}'s assistant.
+Don't spam your name. Just be natural.
 
 ═══════════════════════════════════════════
-🌍 LANGUAGE MATCHING
+✅ CONVERSATION EXAMPLES
 ═══════════════════════════════════════════
-Match the EXACT style:
 
-1. **Amharic (Ge'ez)**:
-   "ሰላም" → "ሰላም! እኔ Anu ነኝ — የ ${ownerName} ረዳት 😊 ምን ልርዳህ?"
+FIRST TIME - "Hi":
+✅ "Hi! I'm Anu, ${ownerName}'s AI assistant 😊 I can help you with anything, or forward a message to him. What would you like?"
+
+FIRST TIME - "ሰላም":
+✅ "ሰላም! እኔ Anu ነኝ — የ ${ownerName} ረዳት 😊 ጥያቄ ልርዳህ ወይስ ለ ${ownerName} መልእክት ልላክ?"
+
+FIRST TIME - "selam":
+✅ "selam! ene Anu negn — ye ${ownerName} redat 😊 question lirdah weys le ${ownerName} message lilak?"
+
+AFTER INTRO - "selam":
+✅ "selam! endet neh? 😊"
+❌ NOT: "selam! ene Anu negn..."
+
+AFTER INTRO - "wendme":
+✅ "wendme! endet neh? min adregnalh? 😊"
+❌ NOT: "Hi! I'm Anu..."
+
+AFTER INTRO - "bro":
+✅ "bro! endet neh? min lirdah? 😊"
+
+AFTER INTRO - "ante":
+✅ "aye! endet neh? 😊"
+
+AFTER INTRO - "endet neh?":
+✅ "dehna negn! antes? 😊"
+
+AFTER INTRO - "Ok":
+✅ "Great! 👍"
+
+AFTER INTRO - "thanks":
+✅ "Anytime wendme! 😊"
+
+AFTER INTRO - "Yes":
+✅ "Got it! 😊"
+
+AFTER INTRO - "Ananya":
+✅ "እሺ! ${ownerName} ን አሳውቀዋለሁ 🙏"
+
+"who are you?" / "ማን ነህ?":
+✅ "I'm Anu, ${ownerName}'s AI assistant 😊"
+✅ "እኔ Anu ነኝ — የ ${ownerName} ረዳት 😊"
+
+"who is ${ownerName}?":
+✅ "${ownerName} is my boss — a wonderful Ethiopian man 😊"
+
+═══════════════════════════════════════════
+🌍 LANGUAGE MATCHING (VERY IMPORTANT)
+═══════════════════════════════════════════
+Match their EXACT style:
+
+1. **Amharic (Ge'ez script)**:
+   "ሰላም" → "ሰላም! እንዴት ነህ? 😊"
+   "ደህና ነህ?" → "ደህና ነኝ! አንተስ? 😊"
+   "እንደምን ነህ?" → "ደህና ነኝ! አንተስ? 😊"
+   "ማን ነህ?" → "እኔ Anu ነኝ — የ ${ownerName} ረዳት 😊"
 
 2. **English**:
-   "Hi" → "Hi! I'm Anu, ${ownerName}'s AI assistant 😊 How can I help you?"
+   "Hi" → "Hey! How are you? 😊"
+   "How are you?" → "Great, thanks! You? 😊"
+   "Who are you?" → "I'm Anu, ${ownerName}'s assistant 😊"
 
-3. **Amharic-in-Latin**:
-   "selam" → "selam! ene Anu negn — ye ${ownerName} redat 😊 min lirdah?"
-   "salam" → "salam! ene Anu negn, ye ${ownerName} redat. endet liredah? 😊"
+3. **Amharic-in-Latin** (VERY COMMON):
+   "selam" → "selam! endet neh? 😊"
+   "salam" → "salam! endet neh? min lirdah? 😊"
+   "wendme" → "wendme! endet neh? min adregnalh? 😊"
+   "bro" → "bro! endet neh? 😊"
+   "ante" → "aye! endet neh? 😊"
+   "dehna neh?" → "dehna negn! antes? 😊"
+   "man neh?" → "ene Anu negn — ye ${ownerName} redat 😊"
+   "endet neh?" → "dehna negn! antes? 😊"
 
 4. Match emojis naturally.
 
 ═══════════════════════════════════════════
-🇪🇹 ETHIOPIAN WORD CHOICE
+🇪🇹 ETHIOPIAN WORD BANK
 ═══════════════════════════════════════════
-- ደህና ነህ? / ደህና ነሽ?
-- እንዴት ነህ? / እንዴት ነሽ?
-- ጤና ይስጥልኝ
-- አመሰግናለሁ / amesegnalehu
+Common greetings to use naturally:
+- selam / salam / ሰላም (hello)
+- wendme / ወንድሜ (brother)
+- ante / አንተ (you - male)
+- anchi / አንቺ (you - female)
+- endet neh? / እንዴት ነህ? (how are you? - male)
+- endet nesh? / እንዴት ነሽ? (how are you? - female)
+- dehna neh? / ደህና ነህ? (are you well?)
+- dehna negn / ደህና ነኝ (I'm well)
+- amesegnalehu / አመሰግናለሁ (thank you)
+- eshi / እሺ (okay)
+- min adregnalh? / ምን አደረግናህ? (what are you doing?)
+- min lirdah? / ምን ልርዳህ? (what can I help with?)
+- ayznalew / አይዞህ (don't worry)
+- chigger yellum / ችግር የለም (no problem)
+- tena yistilign / ጤና ይስጥልኝ (bless you)
+
+Match GENDER when you can infer it:
+- Male → ነህ? / አንተ
+- Female → ነሽ? / አንቺ
+
+═══════════════════════════════════════════
+🎯 YOUR THREE ROLES
+═══════════════════════════════════════════
+1️⃣ **BE A FRIEND** — Talk naturally, warmly, briefly
+2️⃣ **HELP DIRECTLY** — Answer questions, help with homework, advice
+3️⃣ **FORWARD TO ${ownerName}** — When they want ${ownerName} or urgent things
+
+═══════════════════════════════════════════
+📢 ABOUT ${ownerName} - ESCALATION
+═══════════════════════════════════════════
+When they say:
+- "${ownerName}" / "Ananya" / "አናንያ"
+- "ጥራው" / "አሳውቅ" / "ንገረው" / "call him"
+- "Tell ${ownerName}" / "let him know"
+- Or anything urgent/important
+
+→ Reply: "እሺ! ${ownerName} ን አሳውቀዋለሁ 🙏"
+→ Or: "I'll let ${ownerName} know right away 🙏"
 
 ═══════════════════════════════════════════
 📸 PHOTOS
 ═══════════════════════════════════════════
-Warm genuine reaction, 1-2 short sentences.
+Warm genuine reaction — 1-2 sentences.
+"Nice photo! 😊 What is it about?"
+No identity mention unless first contact.
 
 ═══════════════════════════════════════════
 😠 INSULTS
 ═══════════════════════════════════════════
-NEVER insult back.
+NEVER insult back:
+"ምንም አይደለም፣ እንዴት ልርዳህ እችላለሁ?"
+
+═══════════════════════════════════════════
+🚨 CRITICAL RULES
+═══════════════════════════════════════════
+- NEVER reveal AI model names (ChatGPT, GPT, Llama, Qwen, Groq)
+- NEVER show reasoning or thinking
+- NEVER say "I am ${ownerName}"
+- NEVER echo their words back
+- Keep replies SHORT (1-2 sentences)
+- Match their language EXACTLY
+- Be warm and natural like a friend
 
 ═══════════════════════════════════════════
 🚨 OUTPUT FORMAT
@@ -203,12 +325,15 @@ function isWeak(reply, userText) {
   const r = reply.toLowerCase().trim();
   const u = (userText || '').toLowerCase().trim();
 
-  if (r.length < 20) return true;
+  if (r.length < 8) return true;
   if (r === u) return true;
-  if (/^(hi|hello|hey|selam|salam|ሰላም|hi!|hello!|ሰላም!)[\s!?.😊🙏😄]*$/i.test(r)) return true;
 
-  const isGreeting = /^(hi|hello|hey|selam|salam|ሰላም|man neh|who are you|who r u)/i.test(u);
-  if (isGreeting && !/anu/i.test(r)) return true;
+  // Pure greeting-only reply
+  if (/^(hi|hello|hey|selam|salam|wendme|ሰላም|hi!|hello!|ሰላም!)[\s!?.😊🙏😄]*$/i.test(r)) return true;
+
+  // Only require identity if they ASKED
+  const askedIdentity = /(who are you|who r u|ማን ነህ|ማን ነሽ|who is this|man neh|introduce yourself|ማን ነው)/i.test(u);
+  if (askedIdentity && !/anu/i.test(r)) return true;
 
   return false;
 }
@@ -220,20 +345,24 @@ async function generateReply(ownerName, senderName, userText, chatId, isFirst, s
   const sys = sysPrompt(ownerName, senderName, status);
   const hist = getHist(chatId).slice(-6).map(h => ({ role: h.role, content: h.content }));
 
+  /* ─── FIRST CONTACT — Force intro with identity ─── */
   if (isFirst) {
     const introPrompt = `${sys}
 
 ═══════════════════════════════════════════
-🎯 FIRST CONTACT — SPECIAL
+🎯 FIRST CONTACT — SPECIAL INSTRUCTION
 ═══════════════════════════════════════════
 This is the FIRST message from "${senderName}".
-- Introduce yourself as "Anu, ${ownerName}'s AI assistant"
-- Give them TWO options:
-  1. Send a message to ${ownerName} (you'll forward it)
-  2. Get help from you directly
-- Ask which they'd prefer
-- Match their language EXACTLY
-- Keep it short (2-3 sentences)`;
+
+MUST DO:
+1. Introduce yourself: "I'm Anu, ${ownerName}'s AI assistant"
+2. Give them TWO options:
+   • Send a message to ${ownerName} (you'll forward it)
+   • Get help from you directly
+3. Ask which they prefer
+4. Match their language EXACTLY
+
+MUST say your name "Anu" — this is the intro!`;
 
     const r = await callAI(introPrompt, [{ role: 'user', content: userText }], { maxTokens: 300, temperature: 0.85 });
 
@@ -243,20 +372,26 @@ This is the FIRST message from "${senderName}".
       return r.content;
     }
 
+    // Guaranteed fallback
     const isAmharic = /[\u1200-\u137F]/.test(userText);
-    const isLatin = /(selam|salam|dehna|endet|amesegn)/i.test(userText);
+    const isLatin = /(selam|salam|dehna|endet|amesegn|wendme|bro|ante)/i.test(userText);
     let fb;
-    if (isAmharic) fb = `ሰላም ${senderName}! እኔ Anu ነኝ — የ ${ownerName} ረዳት 🤖\nጥያቄ ልርዳህ ወይስ ለ ${ownerName} መልእክት ልላክ?\nምን ትፈልጋለህ? 💛`;
-    else if (isLatin) fb = `selam ${senderName}! ene Anu negn — ye ${ownerName} redat 🤖\nQuestion lirdah weys le ${ownerName} message lilak?\nMin tefelgalh? 💛`;
-    else fb = `Hi ${senderName}! I'm Anu, ${ownerName}'s AI assistant 🤖\nI can help with questions or forward a message to ${ownerName}.\nWhat would you like? 💛`;
+    if (isAmharic) {
+      fb = `ሰላም ${senderName}! እኔ Anu ነኝ — የ ${ownerName} ረዳት 🤖\nጥያቄ ልርዳህ ወይስ ለ ${ownerName} መልእክት ልላክ?\nምን ትፈልጋለህ? 💛`;
+    } else if (isLatin) {
+      fb = `selam ${senderName}! ene Anu negn — ye ${ownerName} redat 🤖\nQuestion lirdah weys le ${ownerName} message lilak?\nMin tefelgalh? 💛`;
+    } else {
+      fb = `Hi ${senderName}! I'm Anu, ${ownerName}'s AI assistant 🤖\nI can help you with anything, or forward a message to ${ownerName}.\nWhat would you like? 💛`;
+    }
 
     addHist(chatId, 'user', userText);
     addHist(chatId, 'assistant', fb);
     return fb;
   }
 
+  /* ─── REGULAR CONVERSATION — Natural, no forced identity ─── */
   const userContent = `${senderName}: "${userText}"`;
-  const r = await callAI(sys, [...hist, { role: 'user', content: userContent }], { maxTokens: 300, temperature: 0.8 });
+  const r = await callAI(sys, [...hist, { role: 'user', content: userContent }], { maxTokens: 250, temperature: 0.9 });
 
   if (r.ok && !isWeak(r.content, userText)) {
     addHist(chatId, 'user', userText);
@@ -264,30 +399,35 @@ This is the FIRST message from "${senderName}".
     return r.content;
   }
 
+  /* ─── Retry if weak ─── */
   if (r.ok) {
+    console.warn('[Anu] Weak reply, retrying:', r.content?.slice(0, 60));
     const retrySys = `${sys}
 
 🚨 YOUR PREVIOUS REPLY WAS TOO WEAK.
-Requirements:
-- Include "Anu" and "${ownerName}'s assistant"
-- At least 2 short sentences
-- Match sender's exact language`;
+Try again. Requirements:
+- Match their exact language style
+- Be natural (like a friend)
+- 1-2 short sentences
+- If they asked about identity, mention "Anu"
+- Otherwise, do NOT force "I'm Anu"`;
 
-    const retry = await callAI(retrySys, [{ role: 'user', content: userContent }], { maxTokens: 300, temperature: 0.9 });
+    const retry = await callAI(retrySys, [{ role: 'user', content: userContent }], { maxTokens: 250, temperature: 0.95 });
 
-    if (retry.ok && retry.content.length > 20 && !isWeak(retry.content, userText)) {
+    if (retry.ok && retry.content.length > 8 && !isWeak(retry.content, userText)) {
       addHist(chatId, 'user', userText);
       addHist(chatId, 'assistant', retry.content);
       return retry.content;
     }
   }
 
+  /* ─── Guaranteed fallback ─── */
   const isAmharic = /[\u1200-\u137F]/.test(userText);
-  const isLatin = /(selam|salam|dehna|endet|amesegn)/i.test(userText);
+  const isLatin = /(selam|salam|dehna|endet|amesegn|wendme|bro|ante)/i.test(userText);
   let fb;
-  if (isAmharic) fb = `ሰላም! እኔ Anu ነኝ — የ ${ownerName} ረዳት 😊 ምን ልርዳህ?`;
-  else if (isLatin) fb = `selam! ene Anu negn — ye ${ownerName} redat 😊 min lirdah?`;
-  else fb = `Hi! I'm Anu, ${ownerName}'s assistant 😊 How can I help?`;
+  if (isAmharic) fb = `ሰላም! እንዴት ነህ? 😊`;
+  else if (isLatin) fb = `selam! endet neh? 😊`;
+  else fb = `Hey! How are you? 😊`;
 
   addHist(chatId, 'user', userText);
   addHist(chatId, 'assistant', fb);
@@ -295,7 +435,7 @@ Requirements:
 }
 
 /* ═══════════════════════════════════════════════════════════
-   PHOTO
+   PHOTO ANALYSIS
    ═══════════════════════════════════════════════════════════ */
 async function analyzePhoto(ownerName, senderName, userText, isFirst, status) {
   const sys = sysPrompt(ownerName, senderName, status);
@@ -304,22 +444,22 @@ async function analyzePhoto(ownerName, senderName, userText, isFirst, status) {
     : `[${senderName} sent a photo]`;
 
   const instruction = isFirst
-    ? `${ctx}\n\nAcknowledge the photo AND introduce yourself as "Anu, ${ownerName}'s assistant". Offer to help or forward.`
-    : `${ctx}\n\nReact warmly — 1-2 sentences. If greeting, include your identity.`;
+    ? `${ctx}\n\nAcknowledge the photo warmly AND introduce yourself as "Anu, ${ownerName}'s assistant". Offer to help or forward.`
+    : `${ctx}\n\nReact warmly — 1-2 sentences. NO identity mention (already introduced).`;
 
   const r = await callAI(sys, [{ role: 'user', content: instruction }], { maxTokens: 250, temperature: 0.85 });
 
-  if (r.ok && r.content && r.content.length > 15) {
+  if (r.ok && r.content && r.content.length > 10) {
     if (isFirst && !/anu/i.test(r.content)) {
       return `Nice photo! I'm Anu, ${ownerName}'s assistant 😊 What can I help with?`;
     }
     return r.content;
   }
-  return `Nice photo! I'm Anu, ${ownerName}'s assistant 😊 How can I help?`;
+  return `Nice photo! 😊`;
 }
 
 /* ═══════════════════════════════════════════════════════════
-   DETECTION
+   DETECTION HELPERS
    ═══════════════════════════════════════════════════════════ */
 function wantsOwner(text) {
   const t = (text || '').toLowerCase();
@@ -348,10 +488,10 @@ function parseRef(text) {
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
-      status: 'Anu Assistant Bot v15.1',
-      identity: 'Anu — Ananya\'s AI assistant',
+      status: 'Anu Assistant Bot v16.0',
+      identity: "Anu — Ananya's AI assistant",
       storage: 'memory',
-      markdown: 'HTML-safe'
+      parse: 'HTML-safe'
     });
   }
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
@@ -410,7 +550,7 @@ export default async function handler(req, res) {
         const sr = await tg('sendMessage', payload);
         await tg('sendMessage', {
           chat_id: chatId,
-          text: sr && sr.ok ? '✅ Sent' : `❌ Failed: ${JSON.stringify(sr).slice(0, 100)}`,
+          text: sr && sr.ok ? '✅ Sent' : `❌ Failed: ${esc(JSON.stringify(sr).slice(0, 100))}`,
           reply_to_message_id: dm.message_id
         });
       } else {
@@ -429,7 +569,7 @@ export default async function handler(req, res) {
       await tg('sendMessage', {
         chat_id: chatId,
         text:
-          `✅ <b>Anu Assistant Bot v15.1</b>\n\n` +
+          `✅ <b>Anu Assistant Bot v16.0</b>\n\n` +
           `🤖 Anu — ${esc(OWNER_NAME)}'s AI assistant\n\n` +
           `<b>Owner Commands:</b>\n` +
           `<code>/start</code> — This menu\n` +
@@ -560,7 +700,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    /* ─── 9️⃣ NON-OWNER — Regular user ─── */
+    /* ─── 9️⃣ NON-OWNER — REGULAR USER ─── */
     if (!isFromOwner && txt && !txt.startsWith('/')) {
       if (state.paused) return res.status(200).json({ ok: true });
 
@@ -581,6 +721,7 @@ export default async function handler(req, res) {
 
       if (isFirst) state.introduced.add(String(chatId));
 
+      /* Escalation */
       const sentiment = detectSentiment(txt);
       const needsOwner = wantsOwner(txt);
 
@@ -671,7 +812,7 @@ export default async function handler(req, res) {
     reply = await generateReply(OWNER_NAME, firstName, userText, chatId, isFirst, status);
   }
 
-  if (!reply) reply = `Hi! I'm Anu, ${OWNER_NAME}'s assistant 😊 How can I help?`;
+  if (!reply) reply = `Hey! How are you? 😊`;
 
   await new Promise(r => setTimeout(r, Math.min(reply.length * 15, 1200)));
 
@@ -684,6 +825,7 @@ export default async function handler(req, res) {
 
   if (isFirst) state.introduced.add(String(chatId));
 
+  /* Escalation */
   const sentiment = detectSentiment(userText);
   const needsOwner = wantsOwner(userText);
 
