@@ -1,20 +1,24 @@
 /* ============================================================
-   Anu Assistant Bot v15.0 — Simple In-Memory
-   ------------------------------------------------------------
-   ✅ No external storage needed
-   ✅ Owner-only commands
-   ✅ Daily status (in-memory, resets on restart)
-   ✅ AI conversation for everyone
-   ✅ Identity: "I'm Anu, Ananya's assistant"
+   Anu Assistant Bot v15.1 — HTML Mode (Fixes Markdown Errors)
    ============================================================ */
 
 const SMART_MODEL = 'openai/gpt-oss-120b';
 
 /* ═══════════════════════════════════════════════════════════
-   IN-MEMORY STATE (resets on cold start)
+   HTML ESCAPE — for user-generated content
+   ═══════════════════════════════════════════════════════════ */
+function esc(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   IN-MEMORY STATE
    ═══════════════════════════════════════════════════════════ */
 const state = {
-  status: null,       // { text, date, setAt }
+  status: null,
   paused: false,
   introduced: new Set(),
   history: new Map()
@@ -27,7 +31,7 @@ function todayKey() {
 function getStatus() {
   if (!state.status) return null;
   if (state.status.date !== todayKey()) {
-    state.status = null; // auto-expire
+    state.status = null;
     return null;
   }
   return state.status;
@@ -157,18 +161,13 @@ Match the EXACT style:
 
 1. **Amharic (Ge'ez)**:
    "ሰላም" → "ሰላም! እኔ Anu ነኝ — የ ${ownerName} ረዳት 😊 ምን ልርዳህ?"
-   "እንደምን ነህ?" → "ደህና ነኝ! አንተስ? እኔ Anu ነኝ — የ ${ownerName} ረዳት 😊"
 
 2. **English**:
    "Hi" → "Hi! I'm Anu, ${ownerName}'s AI assistant 😊 How can I help you?"
-   "How are you?" → "I'm great, thanks! I'm Anu, ${ownerName}'s assistant. What can I help with? 💛"
 
 3. **Amharic-in-Latin**:
    "selam" → "selam! ene Anu negn — ye ${ownerName} redat 😊 min lirdah?"
    "salam" → "salam! ene Anu negn, ye ${ownerName} redat. endet liredah? 😊"
-   "dehna neh?" → "dehna negn, amesegnalehu! ene Anu negn — ye ${ownerName} redat 😊"
-   "man neh?" → "ene Anu negn — ye ${ownerName} redat 😊 antes?"
-   "hi" → "Hi! ene Anu negn, ye ${ownerName} redat. endet liredah? 😊"
 
 4. Match emojis naturally.
 
@@ -179,19 +178,16 @@ Match the EXACT style:
 - እንዴት ነህ? / እንዴት ነሽ?
 - ጤና ይስጥልኝ
 - አመሰግናለሁ / amesegnalehu
-- እሺ
-- ምን ልርዳህ?
 
 ═══════════════════════════════════════════
 📸 PHOTOS
 ═══════════════════════════════════════════
-Warm genuine reaction, 1-2 short sentences:
-"Nice photo! I'm Anu, ${ownerName}'s assistant. What can I help with? 😊"
+Warm genuine reaction, 1-2 short sentences.
 
 ═══════════════════════════════════════════
 😠 INSULTS
 ═══════════════════════════════════════════
-NEVER insult back: "ምንም አይደለም፣ እንዴት ልርዳህ እችላለሁ?"
+NEVER insult back.
 
 ═══════════════════════════════════════════
 🚨 OUTPUT FORMAT
@@ -275,8 +271,7 @@ This is the FIRST message from "${senderName}".
 Requirements:
 - Include "Anu" and "${ownerName}'s assistant"
 - At least 2 short sentences
-- Match sender's exact language
-- Warm and helpful`;
+- Match sender's exact language`;
 
     const retry = await callAI(retrySys, [{ role: 'user', content: userContent }], { maxTokens: 300, temperature: 0.9 });
 
@@ -353,9 +348,10 @@ function parseRef(text) {
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
-      status: 'Anu Assistant Bot v15.0',
+      status: 'Anu Assistant Bot v15.1',
       identity: 'Anu — Ananya\'s AI assistant',
-      storage: 'memory'
+      storage: 'memory',
+      markdown: 'HTML-safe'
     });
   }
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
@@ -414,15 +410,13 @@ export default async function handler(req, res) {
         const sr = await tg('sendMessage', payload);
         await tg('sendMessage', {
           chat_id: chatId,
-          text: sr && sr.ok ? '✅ Sent' : `❌ Failed: \`${JSON.stringify(sr).slice(0, 100)}\``,
-          parse_mode: 'Markdown',
+          text: sr && sr.ok ? '✅ Sent' : `❌ Failed: ${JSON.stringify(sr).slice(0, 100)}`,
           reply_to_message_id: dm.message_id
         });
       } else {
         await tg('sendMessage', {
           chat_id: chatId,
-          text: '⚠️ Could not find target.\nUse: `/send <chat_id> <message>`',
-          parse_mode: 'Markdown',
+          text: '⚠️ Could not find target.\n\nUse: /send <chat_id> <message>',
           reply_to_message_id: dm.message_id
         });
       }
@@ -435,22 +429,22 @@ export default async function handler(req, res) {
       await tg('sendMessage', {
         chat_id: chatId,
         text:
-          `✅ *Anu Assistant Bot v15.0*\n\n` +
-          `🤖 Anu — ${OWNER_NAME}'s AI assistant\n\n` +
-          `*Owner Commands:*\n` +
-          `/start — This menu\n` +
-          `/status <text> — Set today's status\n` +
-          `/status — Show status\n` +
-          `/status clear — Clear status\n` +
-          `/stats — Bot info\n` +
-          `/pause — Pause AI\n` +
-          `/resume — Resume AI\n` +
-          `/send <chat_id> <text> — Direct message\n` +
-          `/help — Help\n\n` +
+          `✅ <b>Anu Assistant Bot v15.1</b>\n\n` +
+          `🤖 Anu — ${esc(OWNER_NAME)}'s AI assistant\n\n` +
+          `<b>Owner Commands:</b>\n` +
+          `<code>/start</code> — This menu\n` +
+          `<code>/status &lt;text&gt;</code> — Set today's status\n` +
+          `<code>/status</code> — Show status\n` +
+          `<code>/status clear</code> — Clear status\n` +
+          `<code>/stats</code> — Bot info\n` +
+          `<code>/pause</code> — Pause AI\n` +
+          `<code>/resume</code> — Resume AI\n` +
+          `<code>/send &lt;chat_id&gt; &lt;text&gt;</code> — Direct message\n` +
+          `<code>/help</code> — Help\n\n` +
           (status
-            ? `📢 *Current status:*\n_"${status.text}"_`
-            : `_No status set for today._`),
-        parse_mode: 'Markdown'
+            ? `📢 <b>Current status:</b>\n<i>"${esc(status.text)}"</i>`
+            : `<i>No status set for today.</i>`),
+        parse_mode: 'HTML'
       });
       return res.status(200).json({ ok: true });
     }
@@ -464,9 +458,9 @@ export default async function handler(req, res) {
         await tg('sendMessage', {
           chat_id: chatId,
           text: status
-            ? `📢 *Today's status:*\n_"${status.text}"_\n\n_Auto-clears at midnight_`
-            : `ℹ️ No status set.\n\nUse: \`/status ዛሬ አሞኛል\``,
-          parse_mode: 'Markdown'
+            ? `📢 <b>Today's status:</b>\n<i>"${esc(status.text)}"</i>\n\n<i>Auto-clears at midnight</i>`
+            : `ℹ️ No status set.\n\nUse: <code>/status ዛሬ አሞኛል</code>`,
+          parse_mode: 'HTML'
         });
         return res.status(200).json({ ok: true });
       }
@@ -475,8 +469,7 @@ export default async function handler(req, res) {
         clearStatus();
         await tg('sendMessage', {
           chat_id: chatId,
-          text: '✅ Status cleared for today.',
-          parse_mode: 'Markdown'
+          text: '✅ Status cleared for today.'
         });
         return res.status(200).json({ ok: true });
       }
@@ -485,11 +478,11 @@ export default async function handler(req, res) {
       await tg('sendMessage', {
         chat_id: chatId,
         text:
-          `✅ *Status set!*\n\n` +
-          `📢 _"${arg}"_\n\n` +
+          `✅ <b>Status set!</b>\n\n` +
+          `📢 <i>"${esc(arg)}"</i>\n\n` +
           `⏰ Auto-clears at midnight\n` +
           `💬 Bot will tell senders this when they ask about you.`,
-        parse_mode: 'Markdown'
+        parse_mode: 'HTML'
       });
       return res.status(200).json({ ok: true });
     }
@@ -499,14 +492,14 @@ export default async function handler(req, res) {
       await tg('sendMessage', {
         chat_id: chatId,
         text:
-          `*Owner Commands*\n\n` +
+          `<b>Owner Commands</b>\n\n` +
           `• Reply to notifications → direct reply\n` +
-          `• /status <text> — Set today's status\n` +
-          `• /status clear — Remove status\n` +
-          `• /send <chat_id> <text> — Direct message\n` +
-          `• /pause, /resume — Control AI\n` +
-          `• /stats — Bot info`,
-        parse_mode: 'Markdown'
+          `• <code>/status &lt;text&gt;</code> — Set today's status\n` +
+          `• <code>/status clear</code> — Remove status\n` +
+          `• <code>/send &lt;chat_id&gt; &lt;text&gt;</code> — Direct message\n` +
+          `• <code>/pause</code>, <code>/resume</code> — Control AI\n` +
+          `• <code>/stats</code> — Bot info`,
+        parse_mode: 'HTML'
       });
       return res.status(200).json({ ok: true });
     }
@@ -517,15 +510,15 @@ export default async function handler(req, res) {
       await tg('sendMessage', {
         chat_id: chatId,
         text:
-          `📊 *Bot Status*\n\n` +
+          `📊 <b>Bot Status</b>\n\n` +
           `✅ Online\n` +
           `🧠 Model: Master AI\n` +
-          `💾 Storage: Memory (in-instance)\n` +
+          `💾 Storage: Memory\n` +
           `💬 History entries: ${state.history.size}\n` +
           `👥 Known chats: ${state.introduced.size}\n` +
           `⏸️ Paused: ${state.paused ? 'Yes' : 'No'}\n` +
           `📢 Today status: ${status ? 'Set ✅' : 'None'}`,
-        parse_mode: 'Markdown'
+        parse_mode: 'HTML'
       });
       return res.status(200).json({ ok: true });
     }
@@ -551,7 +544,11 @@ export default async function handler(req, res) {
       const msgText = parts.join(' ');
 
       if (!targetId || !msgText) {
-        await tg('sendMessage', { chat_id: chatId, text: 'Usage: `/send <chat_id> <message>`', parse_mode: 'Markdown' });
+        await tg('sendMessage', {
+          chat_id: chatId,
+          text: 'Usage: <code>/send &lt;chat_id&gt; &lt;message&gt;</code>',
+          parse_mode: 'HTML'
+        });
         return res.status(200).json({ ok: true });
       }
 
@@ -596,14 +593,14 @@ export default async function handler(req, res) {
         await tg('sendMessage', {
           chat_id: OWNER_CHAT_ID,
           text:
-            `${emoji} *${label}* from *${firstName}* (DM)\n\n` +
-            `💬 _"${txt}"_\n\n` +
-            `🤖 Anu: _"${reply.slice(0, 180)}${reply.length > 180 ? '…' : ''}"_\n\n` +
+            `${emoji} <b>${esc(label)}</b> from <b>${esc(firstName)}</b> (DM)\n\n` +
+            `💬 <i>"${esc(txt)}"</i>\n\n` +
+            `🤖 Anu: <i>"${esc(reply.slice(0, 180))}${reply.length > 180 ? '…' : ''}"</i>\n\n` +
             `━━━━━━━━━━━━━━━━━━\n` +
             `↩️ Reply to this message to send your own reply\n` +
-            `📎 Or use: /send ${chatId} <message>\n\n` +
+            `📎 Or use: <code>/send ${chatId} &lt;message&gt;</code>\n\n` +
             `REF:${chatId}:direct`,
-          parse_mode: 'Markdown'
+          parse_mode: 'HTML'
         });
       }
 
@@ -699,14 +696,14 @@ export default async function handler(req, res) {
     await tg('sendMessage', {
       chat_id: OWNER_CHAT_ID,
       text:
-        `${emoji} *${label}* from *${firstName}*\n\n` +
-        `💬 _"${userText || '[photo]'}"_\n\n` +
-        `🤖 Anu: _"${reply.slice(0, 180)}${reply.length > 180 ? '…' : ''}"_\n\n` +
+        `${emoji} <b>${esc(label)}</b> from <b>${esc(firstName)}</b>\n\n` +
+        `💬 <i>"${esc(userText || '[photo]')}"</i>\n\n` +
+        `🤖 Anu: <i>"${esc(reply.slice(0, 180))}${reply.length > 180 ? '…' : ''}"</i>\n\n` +
         `━━━━━━━━━━━━━━━━━━\n` +
         `↩️ Reply to this message to send your own reply\n` +
-        `📎 Or use: /send ${chatId} <message>\n\n` +
+        `📎 Or use: <code>/send ${chatId} &lt;message&gt;</code>\n\n` +
         `REF:${chatId}:${bizConnId}`,
-      parse_mode: 'Markdown'
+      parse_mode: 'HTML'
     });
   }
 
