@@ -1,106 +1,60 @@
 /* ============================================================
-   Anu Assistant Bot v14.0
+   Anu Assistant Bot v15.0 — Simple In-Memory
    ------------------------------------------------------------
-   ✅ Single file, no Firebase (Upstash Redis for state)
-   ✅ Master AI (openai/gpt-oss-120b)
-   ✅ Always identifies as "Anu, Ananya's assistant"
-   ✅ Daily status — resets automatically at midnight
-   ✅ Owner commands work
-   ✅ Reply-to-notification works
-   ✅ Amharic + English + Latin matching
+   ✅ No external storage needed
+   ✅ Owner-only commands
+   ✅ Daily status (in-memory, resets on restart)
+   ✅ AI conversation for everyone
+   ✅ Identity: "I'm Anu, Ananya's assistant"
    ============================================================ */
 
 const SMART_MODEL = 'openai/gpt-oss-120b';
 
 /* ═══════════════════════════════════════════════════════════
-   UPSTASH REDIS — REST API
+   IN-MEMORY STATE (resets on cold start)
    ═══════════════════════════════════════════════════════════ */
-const UP_URL = process.env.UPSTASH_REDIS_REST_URL;
-const UP_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
-
-async function kvGet(key) {
-  if (!UP_URL || !UP_TOKEN) return null;
-  try {
-    const r = await fetch(`${UP_URL}/get/${encodeURIComponent(key)}`, {
-      headers: { Authorization: `Bearer ${UP_TOKEN}` }
-    });
-    const data = await r.json();
-    return data.result || null;
-  } catch (e) { return null; }
-}
-
-async function kvSet(key, value, ttlSec) {
-  if (!UP_URL || !UP_TOKEN) return false;
-  try {
-    let url = `${UP_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}`;
-    if (ttlSec) url += `/ex/${ttlSec}`;
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${UP_TOKEN}` } });
-    return r.ok;
-  } catch (e) { return false; }
-}
-
-async function kvDel(key) {
-  if (!UP_URL || !UP_TOKEN) return;
-  try {
-    await fetch(`${UP_URL}/del/${encodeURIComponent(key)}`, {
-      headers: { Authorization: `Bearer ${UP_TOKEN}` }
-    });
-  } catch (e) {}
-}
-
-/* Seconds until local midnight */
-function secondsUntilMidnight() {
-  const now = new Date();
-  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
-  return Math.floor((midnight.getTime() - now.getTime()) / 1000);
-}
+const state = {
+  status: null,       // { text, date, setAt }
+  paused: false,
+  introduced: new Set(),
+  history: new Map()
+};
 
 function todayKey() {
   return new Date().toISOString().split('T')[0];
 }
 
-/* ═══════════════════════════════════════════════════════════
-   IN-MEMORY HISTORY (per warm instance)
-   ═══════════════════════════════════════════════════════════ */
-const history = new Map();
+function getStatus() {
+  if (!state.status) return null;
+  if (state.status.date !== todayKey()) {
+    state.status = null; // auto-expire
+    return null;
+  }
+  return state.status;
+}
+
+function setStatus(text) {
+  state.status = { text, date: todayKey(), setAt: Date.now() };
+  return state.status;
+}
+
+function clearStatus() {
+  state.status = null;
+}
 
 function getHist(chatId) {
-  return history.get(String(chatId)) || [];
+  return state.history.get(String(chatId)) || [];
 }
 
 function addHist(chatId, role, content) {
   const k = String(chatId);
-  const h = history.get(k) || [];
+  const h = state.history.get(k) || [];
   h.push({ role, content });
-  history.set(k, h.slice(-10));
-  if (history.size > 100) {
-    const keys = [...history.keys()].slice(0, 50);
-    keys.forEach(x => history.delete(x));
+  state.history.set(k, h.slice(-10));
+  if (state.history.size > 200) {
+    const keys = [...state.history.keys()].slice(0, 100);
+    keys.forEach(x => state.history.delete(x));
   }
-}
-
-/* ═══════════════════════════════════════════════════════════
-   STATUS HELPERS
-   ═══════════════════════════════════════════════════════════ */
-async function getStatus() {
-  const raw = await kvGet('bot_status');
-  if (!raw) return null;
-  try {
-    const data = JSON.parse(raw);
-    if (data.date !== todayKey()) return null; // expired
-    return data;
-  } catch (e) { return null; }
-}
-
-async function setStatus(text, setBy) {
-  const data = { text, date: todayKey(), setBy, setAt: Date.now() };
-  const ttl = secondsUntilMidnight();
-  await kvSet('bot_status', JSON.stringify(data), ttl);
-  return data;
-}
-
-async function clearStatus() {
-  await kvDel('bot_status');
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -257,7 +211,6 @@ function isWeak(reply, userText) {
   if (r === u) return true;
   if (/^(hi|hello|hey|selam|salam|ሰላም|hi!|hello!|ሰላም!)[\s!?.😊🙏😄]*$/i.test(r)) return true;
 
-  // Greeting should include "Anu"
   const isGreeting = /^(hi|hello|hey|selam|salam|ሰላም|man neh|who are you|who r u)/i.test(u);
   if (isGreeting && !/anu/i.test(r)) return true;
 
@@ -271,7 +224,6 @@ async function generateReply(ownerName, senderName, userText, chatId, isFirst, s
   const sys = sysPrompt(ownerName, senderName, status);
   const hist = getHist(chatId).slice(-6).map(h => ({ role: h.role, content: h.content }));
 
-  // First contact — force intro
   if (isFirst) {
     const introPrompt = `${sys}
 
@@ -297,17 +249,16 @@ This is the FIRST message from "${senderName}".
 
     const isAmharic = /[\u1200-\u137F]/.test(userText);
     const isLatin = /(selam|salam|dehna|endet|amesegn)/i.test(userText);
-    let fallback;
-    if (isAmharic) fallback = `ሰላም ${senderName}! እኔ Anu ነኝ — የ ${ownerName} ረዳት 🤖\nጥያቄ ልርዳህ ወይስ ለ ${ownerName} መልእክት ልላክ?\nምን ትፈልጋለህ? 💛`;
-    else if (isLatin) fallback = `selam ${senderName}! ene Anu negn — ye ${ownerName} redat 🤖\nQuestion lirdah weys le ${ownerName} message lilak?\nMin tefelgalh? 💛`;
-    else fallback = `Hi ${senderName}! I'm Anu, ${ownerName}'s AI assistant 🤖\nI can help with questions or forward a message to ${ownerName}.\nWhat would you like? 💛`;
+    let fb;
+    if (isAmharic) fb = `ሰላም ${senderName}! እኔ Anu ነኝ — የ ${ownerName} ረዳት 🤖\nጥያቄ ልርዳህ ወይስ ለ ${ownerName} መልእክት ልላክ?\nምን ትፈልጋለህ? 💛`;
+    else if (isLatin) fb = `selam ${senderName}! ene Anu negn — ye ${ownerName} redat 🤖\nQuestion lirdah weys le ${ownerName} message lilak?\nMin tefelgalh? 💛`;
+    else fb = `Hi ${senderName}! I'm Anu, ${ownerName}'s AI assistant 🤖\nI can help with questions or forward a message to ${ownerName}.\nWhat would you like? 💛`;
 
     addHist(chatId, 'user', userText);
-    addHist(chatId, 'assistant', fallback);
-    return fallback;
+    addHist(chatId, 'assistant', fb);
+    return fb;
   }
 
-  // Regular
   const userContent = `${senderName}: "${userText}"`;
   const r = await callAI(sys, [...hist, { role: 'user', content: userContent }], { maxTokens: 300, temperature: 0.8 });
 
@@ -317,9 +268,7 @@ This is the FIRST message from "${senderName}".
     return r.content;
   }
 
-  // Retry
   if (r.ok) {
-    console.warn('[Anu] Weak reply, retrying:', r.content?.slice(0, 60));
     const retrySys = `${sys}
 
 🚨 YOUR PREVIOUS REPLY WAS TOO WEAK.
@@ -338,7 +287,6 @@ Requirements:
     }
   }
 
-  // Guaranteed fallback
   const isAmharic = /[\u1200-\u137F]/.test(userText);
   const isLatin = /(selam|salam|dehna|endet|amesegn)/i.test(userText);
   let fb;
@@ -405,9 +353,9 @@ function parseRef(text) {
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
-      status: 'Anu Assistant Bot v14.0',
+      status: 'Anu Assistant Bot v15.0',
       identity: 'Anu — Ananya\'s AI assistant',
-      storage: UP_URL ? 'Upstash Redis' : 'memory-only'
+      storage: 'memory'
     });
   }
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
@@ -483,16 +431,16 @@ export default async function handler(req, res) {
 
     /* ─── 2️⃣ OWNER /start ─── */
     if (isFromOwner && txt === '/start') {
-      const status = await getStatus();
+      const status = getStatus();
       await tg('sendMessage', {
         chat_id: chatId,
         text:
-          `✅ *Anu Assistant Bot v14.0*\n\n` +
+          `✅ *Anu Assistant Bot v15.0*\n\n` +
           `🤖 Anu — ${OWNER_NAME}'s AI assistant\n\n` +
-          `*Commands:*\n` +
+          `*Owner Commands:*\n` +
           `/start — This menu\n` +
-          `/status <text> — Set today's status (e.g. "ዛሬ አሞኛል")\n` +
-          `/status — Show current status\n` +
+          `/status <text> — Set today's status\n` +
+          `/status — Show status\n` +
           `/status clear — Clear status\n` +
           `/stats — Bot info\n` +
           `/pause — Pause AI\n` +
@@ -500,7 +448,7 @@ export default async function handler(req, res) {
           `/send <chat_id> <text> — Direct message\n` +
           `/help — Help\n\n` +
           (status
-            ? `📢 *Current status:*\n_"${status.text}"_\n_(Auto-resets at midnight)_`
+            ? `📢 *Current status:*\n_"${status.text}"_`
             : `_No status set for today._`),
         parse_mode: 'Markdown'
       });
@@ -511,22 +459,20 @@ export default async function handler(req, res) {
     if (isFromOwner && (txt === '/status' || txt.startsWith('/status '))) {
       const arg = txt.slice(8).trim();
 
-      // Show current
       if (!arg) {
-        const status = await getStatus();
+        const status = getStatus();
         await tg('sendMessage', {
           chat_id: chatId,
           text: status
-            ? `📢 *Today's status:*\n_"${status.text}"_\n\n_Set at ${new Date(status.setAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}_\n_Auto-clears at midnight_`
-            : `ℹ️ No status set for today.\n\nUse: \`/status ዛሬ አሞኛል\``,
+            ? `📢 *Today's status:*\n_"${status.text}"_\n\n_Auto-clears at midnight_`
+            : `ℹ️ No status set.\n\nUse: \`/status ዛሬ አሞኛል\``,
           parse_mode: 'Markdown'
         });
         return res.status(200).json({ ok: true });
       }
 
-      // Clear
       if (arg === 'clear' || arg === 'delete' || arg === 'off') {
-        await clearStatus();
+        clearStatus();
         await tg('sendMessage', {
           chat_id: chatId,
           text: '✅ Status cleared for today.',
@@ -535,15 +481,13 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
-      // Set
-      const newStatus = await setStatus(arg, OWNER_NAME);
-      const hrs = Math.round(secondsUntilMidnight() / 3600 * 10) / 10;
+      setStatus(arg);
       await tg('sendMessage', {
         chat_id: chatId,
         text:
           `✅ *Status set!*\n\n` +
           `📢 _"${arg}"_\n\n` +
-          `⏰ Auto-clears in ~${hrs} hours (at midnight)\n` +
+          `⏰ Auto-clears at midnight\n` +
           `💬 Bot will tell senders this when they ask about you.`,
         parse_mode: 'Markdown'
       });
@@ -569,17 +513,17 @@ export default async function handler(req, res) {
 
     /* ─── 5️⃣ OWNER /stats ─── */
     if (isFromOwner && txt === '/stats') {
-      const status = await getStatus();
-      const paused = await kvGet('bot_paused');
+      const status = getStatus();
       await tg('sendMessage', {
         chat_id: chatId,
         text:
           `📊 *Bot Status*\n\n` +
           `✅ Online\n` +
-          `🧠 Model: Master AI (gpt-oss-120b)\n` +
-          `💾 Storage: ${UP_URL ? 'Upstash Redis' : 'Memory'}\n` +
-          `💬 History entries: ${history.size}\n` +
-          `⏸️ Paused: ${paused === '1' ? 'Yes' : 'No'}\n` +
+          `🧠 Model: Master AI\n` +
+          `💾 Storage: Memory (in-instance)\n` +
+          `💬 History entries: ${state.history.size}\n` +
+          `👥 Known chats: ${state.introduced.size}\n` +
+          `⏸️ Paused: ${state.paused ? 'Yes' : 'No'}\n` +
           `📢 Today status: ${status ? 'Set ✅' : 'None'}`,
         parse_mode: 'Markdown'
       });
@@ -588,14 +532,14 @@ export default async function handler(req, res) {
 
     /* ─── 6️⃣ OWNER /pause ─── */
     if (isFromOwner && txt === '/pause') {
-      await kvSet('bot_paused', '1');
+      state.paused = true;
       await tg('sendMessage', { chat_id: chatId, text: '⏸️ AI paused. Send /resume to restart.' });
       return res.status(200).json({ ok: true });
     }
 
     /* ─── 7️⃣ OWNER /resume ─── */
     if (isFromOwner && txt === '/resume') {
-      await kvSet('bot_paused', '0');
+      state.paused = false;
       await tg('sendMessage', { chat_id: chatId, text: '▶️ AI resumed.' });
       return res.status(200).json({ ok: true });
     }
@@ -614,26 +558,22 @@ export default async function handler(req, res) {
       const r = await tg('sendMessage', { chat_id: targetId, text: msgText });
       await tg('sendMessage', {
         chat_id: chatId,
-        text: r && r.ok ? '✅ Sent' : '❌ Failed (may need business connection)'
+        text: r && r.ok ? '✅ Sent' : '❌ Failed'
       });
       return res.status(200).json({ ok: true });
     }
 
-    /* ─── 9️⃣ NON-OWNER — REGULAR USER ─── */
+    /* ─── 9️⃣ NON-OWNER — Regular user ─── */
     if (!isFromOwner && txt && !txt.startsWith('/')) {
-      const paused = await kvGet('bot_paused');
-      if (paused === '1') return res.status(200).json({ ok: true });
+      if (state.paused) return res.status(200).json({ ok: true });
 
       const senderName = dm.from?.first_name || 'there';
       const firstName = senderName.split(' ')[0];
-
-      const introducedKey = `introduced:${chatId}`;
-      const wasIntroduced = await kvGet(introducedKey);
-      const isFirst = !wasIntroduced;
+      const isFirst = !state.introduced.has(String(chatId));
 
       console.log('[Anu] DM from', firstName, '| first:', isFirst);
 
-      const status = await getStatus();
+      const status = getStatus();
       const reply = await generateReply(OWNER_NAME, firstName, txt, chatId, isFirst, status);
 
       await tg('sendMessage', {
@@ -642,11 +582,8 @@ export default async function handler(req, res) {
         reply_to_message_id: dm.message_id
       });
 
-      if (isFirst) {
-        await kvSet(introducedKey, '1', 60 * 60 * 24 * 30); // 30 days
-      }
+      if (isFirst) state.introduced.add(String(chatId));
 
-      // Escalation
       const sentiment = detectSentiment(txt);
       const needsOwner = wantsOwner(txt);
 
@@ -677,15 +614,13 @@ export default async function handler(req, res) {
     if (!isFromOwner && txt === '/start') {
       const senderName = dm.from?.first_name || 'there';
       const firstName = senderName.split(' ')[0];
-      const introducedKey = `introduced:${chatId}`;
-      const wasIntroduced = await kvGet(introducedKey);
-      const isFirst = !wasIntroduced;
+      const isFirst = !state.introduced.has(String(chatId));
 
-      const status = await getStatus();
+      const status = getStatus();
       const reply = await generateReply(OWNER_NAME, firstName, '/start', chatId, isFirst, status);
 
       await tg('sendMessage', { chat_id: chatId, text: reply });
-      if (isFirst) await kvSet(introducedKey, '1', 60 * 60 * 24 * 30);
+      if (isFirst) state.introduced.add(String(chatId));
       return res.status(200).json({ ok: true });
     }
 
@@ -708,8 +643,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true });
   }
 
-  const paused = await kvGet('bot_paused');
-  if (paused === '1') return res.status(200).json({ ok: true });
+  if (state.paused) return res.status(200).json({ ok: true });
 
   let userText = '';
   let isPhoto = false;
@@ -722,9 +656,7 @@ export default async function handler(req, res) {
   if (userText.startsWith('/')) return res.status(200).json({ ok: true });
 
   const firstName = senderName.split(' ')[0];
-  const introducedKey = `introduced:${chatId}`;
-  const wasIntroduced = await kvGet(introducedKey);
-  const isFirst = !wasIntroduced;
+  const isFirst = !state.introduced.has(String(chatId));
 
   console.log('[Anu] Business from', firstName, '| first:', isFirst);
 
@@ -734,7 +666,7 @@ export default async function handler(req, res) {
     business_connection_id: bizConnId
   }).catch(() => {});
 
-  const status = await getStatus();
+  const status = getStatus();
   let reply = '';
   if (isPhoto) {
     reply = await analyzePhoto(OWNER_NAME, firstName, userText, isFirst, status);
@@ -753,9 +685,8 @@ export default async function handler(req, res) {
     reply_to_message_id: msgId
   });
 
-  if (isFirst) await kvSet(introducedKey, '1', 60 * 60 * 24 * 30);
+  if (isFirst) state.introduced.add(String(chatId));
 
-  // Escalation
   const sentiment = detectSentiment(userText);
   const needsOwner = wantsOwner(userText);
 
