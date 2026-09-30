@@ -1,19 +1,18 @@
 /* ============================================================
-   Anu Bot v17.0 — Professional Edition
+   Anu Bot v17.1 — Final Fixed Version
    ------------------------------------------------------------
-   ✅ Every reply starts with "anu bot:" prefix
-   ✅ Firebase Firestore for daily status (persists)
-   ✅ Deep reasoning (AI thinks before replying)
-   ✅ Better Amharic accuracy
-   ✅ Owner commands work
-   ✅ Reply-to-notification works
-   ✅ HTML-safe (no markdown errors)
+   ✅ Fixed: null status crash
+   ✅ Fixed: typing indicator staying too long
+   ✅ Faster AI responses (15s max)
+   ✅ "anu bot:" prefix on every reply
+   ✅ Firebase status persistence
+   ✅ Deep thinking without being slow
    ============================================================ */
 
 const SMART_MODEL = 'openai/gpt-oss-120b';
 
 /* ═══════════════════════════════════════════════════════════
-   FIREBASE FIRESTORE — REST API (for status persistence)
+   FIREBASE FIRESTORE — REST API
    ═══════════════════════════════════════════════════════════ */
 const FIREBASE_PROJECT_ID = 'my-ai-eaf27';
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
@@ -91,7 +90,7 @@ async function fsDelete(col, id) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   STATUS — Firebase backed (persists across restarts)
+   STATUS
    ═══════════════════════════════════════════════════════════ */
 function todayKey() {
   return new Date().toISOString().split('T')[0];
@@ -119,7 +118,7 @@ async function clearStatus() {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   IN-MEMORY STATE (transient)
+   IN-MEMORY STATE
    ═══════════════════════════════════════════════════════════ */
 const state = {
   paused: false,
@@ -153,13 +152,13 @@ function esc(s) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   GROQ AI — Deep Thinking
+   GROQ AI — Faster responses
    ═══════════════════════════════════════════════════════════ */
 async function callAI(sysPrompt, messages, opts = {}) {
   const key = process.env.GROQ_API_KEY;
   if (!key) return { ok: false, error: 'No API key' };
 
-  const timeout = opts.timeoutMs || 25000; // up to 25s for deep thinking
+  const timeout = opts.timeoutMs || 12000; // 12s max — faster than 25s
   const controller = new AbortController();
   const tId = setTimeout(() => controller.abort(), timeout);
 
@@ -174,9 +173,9 @@ async function callAI(sysPrompt, messages, opts = {}) {
         model: SMART_MODEL,
         messages: [{ role: 'system', content: sysPrompt }, ...messages],
         temperature: opts.temperature ?? 0.75,
-        max_tokens: opts.maxTokens || 400,
+        max_tokens: opts.maxTokens || 300,
         top_p: 0.9,
-        reasoning_effort: 'medium' // deeper thinking, not too slow
+        reasoning_effort: 'low' // FAST but still smart
       }),
       signal: controller.signal
     });
@@ -214,16 +213,18 @@ function cleanResp(text) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   SYSTEM PROMPT — Deep analysis, natural Amharic
+   SYSTEM PROMPT — Null-safe
    ═══════════════════════════════════════════════════════════ */
 function sysPrompt(ownerName, senderName, status) {
-  const statusBlock = status
+  const statusText = (status && typeof status.text === 'string') ? status.text.trim() : '';
+
+  const statusBlock = statusText
     ? `
 
 ═══════════════════════════════════════════
 📢 TODAY'S STATUS (${ownerName.toUpperCase()})
 ═══════════════════════════════════════════
-"${status.text}"
+"${statusText}"
 
 If anyone asks where ${ownerName} is or about him, tell them this naturally.`
     : '';
@@ -241,93 +242,84 @@ If anyone asks where ${ownerName} is or about him, tell them this naturally.`
 ═══════════════════════════════════════════
 🧠 THINK DEEPLY BEFORE REPLYING (INTERNAL)
 ═══════════════════════════════════════════
-Silently analyze the message:
-
-1. **Language**: Amharic script? English? Amharic-in-Latin (selam, wendme, ante)?
-2. **Gender**: Is the sender male (wendme, ante, neh) or female (anchi, nesh)?
+Silently analyze:
+1. **Language**: Amharic? English? Amharic-in-Latin (selam, wendme)?
+2. **Gender**: Male (wendme, ante, neh) or female (anchi, nesh)?
 3. **Emotion**: Happy, sad, angry, urgent, casual?
-4. **Intent**: Greeting? Question? Request? Just chatting?
-5. **Context**: What was said before in this conversation?
-6. **Proper Amharic**: What is the CORRECT Amharic phrase for this?
+4. **Intent**: Greeting? Question? Request?
+5. **Proper Amharic**: What's the CORRECT phrase?
 
 Then reply naturally in EXACTLY the same language style.
 
 ═══════════════════════════════════════════
-🚨 CRITICAL LANGUAGE RULES
+🚨 LANGUAGE RULES
 ═══════════════════════════════════════════
 
-**Amharic-in-Latin (MOST COMMON)** — reply in SAME Latin style:
-- "selam" / "salam" → "selam! endet neh?" / "salam! endet neh?"
+**Amharic-in-Latin** (MOST COMMON) — reply in SAME Latin style:
+- "selam"/"salam" → "selam! endet neh?"
 - "wendme" → "wendme! endet neh?"
 - "bro" → "bro! endet neh?"
 - "ante" → "aye! endet neh?"
 - "dehna neh?" → "dehna negn! antes?"
 - "endet neh?" → "dehna negn! antes?"
-- "man neh?" / "man new?" → "ene Anu negn — ye ${ownerName} redat"
-- "min adregnalh?" → "wede ${ownerName} redat engenalehu, antes?"
+- "man neh?"/"man new?" → "ene Anu negn — ye ${ownerName} redat"
 - "amesegnalehu" → "amesegnalehu wendme! 😊"
 
 **Amharic (Ge'ez)** — reply in Ge'ez:
 - "ሰላም" → "ሰላም! እንዴት ነህ?"
 - "ደህና ነህ?" → "ደህና ነኝ! አንተስ?"
-- "እንደምን ነህ?" → "ደህና ነኝ! አንተስ?"
 - "ማን ነህ?" → "እኔ Anu ነኝ — የ ${ownerName} ረዳት"
-- "ማን ነው?" → "እኔ Anu ነኝ — የ ${ownerName} ረዳት"
 - "አመሰግናለሁ" → "አመሰግናለሁ ወንድሜ! 😊"
 
-**English** — reply in English:
-- "Hi" / "Hello" → "Hi! How can I help you?"
+**English**:
+- "Hi" → "Hi! How can I help you?"
 - "How are you?" → "Great, thanks! You?"
 - "Who are you?" → "I'm Anu, ${ownerName}'s AI assistant"
 
 ═══════════════════════════════════════════
-👤 GENDER DETECTION (VERY IMPORTANT)
+👤 GENDER DETECTION
 ═══════════════════════════════════════════
-- If sender uses "wendme", "ante", "neh" → MALE
-  → Reply with: ነህ? / አንተስ? / ወንድሜ
-- If sender uses "anchi", "nesh" → FEMALE
-  → Reply with: ነሽ? / አንቺስ? / እህቴ
-- If unsure → NEUTRAL: "endet neh? min lirdah?"
+- "wendme", "ante", "neh" → MALE
+- "anchi", "nesh" → FEMALE
+- Unsure → NEUTRAL
 
 ═══════════════════════════════════════════
-🚨 WHEN TO MENTION YOUR IDENTITY
+🆔 WHEN TO MENTION IDENTITY
 ═══════════════════════════════════════════
-Say "I'm Anu" / "እኔ Anu ነኝ" ONLY when:
+Say "I'm Anu" ONLY when:
 - ✅ They ask "who are you?" / "ማን ነህ?"
-- ✅ They ask "are you ${ownerName}?" / "${ownerName} ነህ?"
-- ✅ FIRST contact ever (handled separately)
+- ✅ They ask "are you ${ownerName}?"
+- ✅ FIRST contact ever
 
-DO NOT mention identity when:
+DO NOT mention identity:
 - ❌ Regular conversation
 - ❌ After first intro
-- ❌ Answering simple questions
 - ❌ Just saying hi
 
 ═══════════════════════════════════════════
-🎯 WHEN SOMEONE ASKS ABOUT ${ownerName.toUpperCase()}
+🎯 WHEN ASKED ABOUT ${ownerName.toUpperCase()}
 ═══════════════════════════════════════════
 - "${ownerName} ይኖራል?" / "Is ${ownerName} there?" / "${ownerName} አለ?"
-  → "${ownerName} አለ! ለምን እንደሚፈልጉት ከነገሩኝ አሳውቀዋለሁ"
-  → With status: "${ownerName} ${status.text} ለምን እንደሚፈልጉት ከነገሩኝ አሳውቀዋለሁ"
+  → No status: "${ownerName} አለ! ለምን እንደሚፈልጉት ከነገሩኝ አሳውቀዋለሁ"
+  → With status: "${ownerName} ${statusText}"
 
 - "${ownerName} የት ነው?" / "Where is ${ownerName}?"
-  → Status set: "${ownerName} ${status.text}"
+  → Status: "${ownerName} ${statusText}"
   → No status: "${ownerName} አሁን አይገኝም። ለምን እንደሚፈልጉት ከነገሩኝ አሳውቀዋለሁ"
 
-- "ጥራው" / "አሳውቅ" / "Tell ${ownerName}" / "${ownerName} ን ንገረው"
+- "ጥራው" / "አሳውቅ" / "Tell ${ownerName}"
   → "እሺ! ${ownerName} ን አሳውቀዋለሁ 🙏"
 
 - "who is ${ownerName}?" / "${ownerName} ማን ነው?"
   → "${ownerName} አለቃዬ ነው — ጥሩ ሰው 😊"
 
 ═══════════════════════════════════════════
-💬 REPLY STYLE
+💬 STYLE
 ═══════════════════════════════════════════
 - Short (1-2 sentences)
 - Warm and natural
 - Ethiopian friendliness
 - Natural emojis (😊 🙏 ✨ 💛)
-- NO long paragraphs
 
 ═══════════════════════════════════════════
 📸 PHOTOS
@@ -346,13 +338,11 @@ NEVER insult back: "ምንም አይደለም፣ እንዴት ልርዳህ እ�
 - NEVER show reasoning or analysis
 - NEVER say "I am ${ownerName}"
 - NEVER echo their words back
-- NEVER write long paragraphs
 
 ═══════════════════════════════════════════
-📝 OUTPUT FORMAT
+📝 OUTPUT
 ═══════════════════════════════════════════
-Output ONLY the reply text. No reasoning, no drafts, no meta, no quotes.
-Be a warm, natural Ethiopian AI assistant.${statusBlock}`;
+Output ONLY the reply text. No reasoning, no drafts, no meta, no quotes.${statusBlock}`;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -365,18 +355,31 @@ function isWeak(reply, userText) {
 
   if (r.length < 8) return true;
   if (r === u) return true;
-
   if (/^(hi|hello|hey|selam|salam|wendme|ሰላም|hi!|hello!|ሰላም!)[\s!?.😊🙏😄]*$/i.test(r)) return true;
 
   const askedIdentity = /(who are you|who r u|ማን ነህ|ማን ነሽ|who is this|man neh|man new|introduce yourself|ማን ነው)/i.test(u);
   if (askedIdentity && !/anu/i.test(r)) return true;
 
-  const askedAnanya = /(ananya|anani|አናንያ|አናኒ)/i.test(u);
-  if (askedAnanya && !/(ananya|anani|አናንያ|አናኒ|asaweq|asawq|አሳውቅ|nigerew|nigerat|ንገረው|ንገራት)/i.test(r)) {
-    // Not strict — just a hint
-  }
-
   return false;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TYPING INDICATOR — refresh every 4 seconds
+   ═══════════════════════════════════════════════════════════ */
+function startTypingLoop(tg, chatId, bizConnId, isPhoto) {
+  const action = isPhoto ? 'upload_photo' : 'typing';
+  const payload = { chat_id: chatId, action };
+  if (bizConnId) payload.business_connection_id = bizConnId;
+
+  // Send immediately
+  tg('sendChatAction', payload).catch(() => {});
+
+  // Refresh every 4 seconds (Telegram typing lasts ~5s)
+  const interval = setInterval(() => {
+    tg('sendChatAction', payload).catch(() => {});
+  }, 4000);
+
+  return () => clearInterval(interval);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -391,7 +394,7 @@ async function generateReply(ownerName, senderName, userText, chatId, isFirst, s
     const introPrompt = `${sys}
 
 ═══════════════════════════════════════════
-🎯 FIRST CONTACT — SPECIAL INTRO
+🎯 FIRST CONTACT
 ═══════════════════════════════════════════
 This is the FIRST message from "${senderName}".
 
@@ -402,11 +405,15 @@ MUST DO:
    • Get help from me directly
 3. Ask which they prefer
 4. Match their EXACT language style
+5. Keep it SHORT (2-3 sentences)
 
-MUST mention "Anu" — this is the intro!
-Keep it SHORT (2-3 sentences).`;
+MUST include "Anu"!`;
 
-    const r = await callAI(introPrompt, [{ role: 'user', content: userText }], { maxTokens: 350, temperature: 0.85 });
+    const r = await callAI(introPrompt, [{ role: 'user', content: userText }], {
+      maxTokens: 300,
+      temperature: 0.85,
+      timeoutMs: 12000
+    });
 
     if (r.ok && /anu/i.test(r.content) && r.content.length > 30) {
       addHist(chatId, 'user', userText);
@@ -430,12 +437,12 @@ Keep it SHORT (2-3 sentences).`;
     return fb;
   }
 
-  /* ─── REGULAR CONVERSATION ─── */
+  /* ─── REGULAR ─── */
   const userContent = `${senderName}: "${userText}"`;
   const r = await callAI(sys, [...hist, { role: 'user', content: userContent }], {
-    maxTokens: 300,
+    maxTokens: 250,
     temperature: 0.85,
-    timeoutMs: 20000
+    timeoutMs: 12000
   });
 
   if (r.ok && !isWeak(r.content, userText)) {
@@ -449,19 +456,16 @@ Keep it SHORT (2-3 sentences).`;
     console.warn('[Anu] Weak reply, retrying:', r.content?.slice(0, 60));
     const retrySys = `${sys}
 
-🚨 YOUR PREVIOUS REPLY WAS TOO WEAK.
-Try again. Requirements:
-- Match their exact language style
-- Natural like a friend
-- 1-2 short sentences
-- If they asked about identity → mention "Anu"
-- If they asked about ${ownerName} → say you'll notify him
-- Otherwise, just reply naturally`;
+🚨 RETRY: Previous reply was too weak.
+- Match their exact language
+- Natural, 1-2 short sentences
+- If they asked identity → say "Anu"
+- If about ${ownerName} → say you'll notify him`;
 
     const retry = await callAI(retrySys, [{ role: 'user', content: userContent }], {
-      maxTokens: 300,
+      maxTokens: 250,
       temperature: 0.9,
-      timeoutMs: 15000
+      timeoutMs: 10000
     });
 
     if (retry.ok && retry.content.length > 8 && !isWeak(retry.content, userText)) {
@@ -485,7 +489,7 @@ Try again. Requirements:
 }
 
 /* ═══════════════════════════════════════════════════════════
-   PHOTO ANALYSIS
+   PHOTO
    ═══════════════════════════════════════════════════════════ */
 async function analyzePhoto(ownerName, senderName, userText, isFirst, status) {
   const sys = sysPrompt(ownerName, senderName, status);
@@ -494,13 +498,13 @@ async function analyzePhoto(ownerName, senderName, userText, isFirst, status) {
     : `[${senderName} sent a photo]`;
 
   const instruction = isFirst
-    ? `${ctx}\n\nAcknowledge the photo AND introduce yourself as "Anu, ${ownerName}'s assistant". Offer to help.`
+    ? `${ctx}\n\nAcknowledge the photo AND introduce yourself as "Anu, ${ownerName}'s assistant".`
     : `${ctx}\n\nReact warmly — 1-2 sentences.`;
 
   const r = await callAI(sys, [{ role: 'user', content: instruction }], {
-    maxTokens: 250,
+    maxTokens: 200,
     temperature: 0.85,
-    timeoutMs: 15000
+    timeoutMs: 10000
   });
 
   if (r.ok && r.content && r.content.length > 10) {
@@ -564,10 +568,10 @@ function parseRef(text) {
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
-      status: 'Anu Bot v17.0',
+      status: 'Anu Bot v17.1',
       identity: "Anu — Ananya's AI assistant",
       storage: 'Firebase + memory',
-      features: ['deep-thinking', 'daily-status', 'owner-commands', 'reply-notification']
+      fixes: ['null-status', 'typing-loop', 'fast-ai']
     });
   }
   if (req.method !== 'POST') return res.status(405).send('Method not allowed');
@@ -642,10 +646,11 @@ export default async function handler(req, res) {
     /* ─── 2️⃣ OWNER /start ─── */
     if (isFromOwner && txt === '/start') {
       const status = await getStatus();
+      const statusText = (status && typeof status.text === 'string') ? status.text : '';
       await tg('sendMessage', {
         chat_id: chatId,
         text:
-          `✅ <b>Anu Bot v17.0</b>\n\n` +
+          `✅ <b>Anu Bot v17.1</b>\n\n` +
           `🤖 Anu — ${esc(OWNER_NAME)}'s AI assistant\n\n` +
           `<b>Owner Commands:</b>\n` +
           `<code>/start</code> — This menu\n` +
@@ -657,8 +662,8 @@ export default async function handler(req, res) {
           `<code>/resume</code> — Resume AI\n` +
           `<code>/send &lt;chat_id&gt; &lt;text&gt;</code> — Direct message\n` +
           `<code>/help</code> — Help\n\n` +
-          (status
-            ? `📢 <b>Current status:</b>\n<i>"${esc(status.text)}"</i>`
+          (statusText
+            ? `📢 <b>Current status:</b>\n<i>"${esc(statusText)}"</i>`
             : `<i>No status set for today.</i>`),
         parse_mode: 'HTML'
       });
@@ -671,10 +676,11 @@ export default async function handler(req, res) {
 
       if (!arg) {
         const status = await getStatus();
+        const statusText = (status && typeof status.text === 'string') ? status.text : '';
         await tg('sendMessage', {
           chat_id: chatId,
-          text: status
-            ? `📢 <b>Today's status:</b>\n<i>"${esc(status.text)}"</i>\n\n<i>Auto-clears at midnight (server time)</i>`
+          text: statusText
+            ? `📢 <b>Today's status:</b>\n<i>"${esc(statusText)}"</i>`
             : `ℹ️ No status set.\n\nUse: <code>/status ዛሬ አሞኛል</code>`,
           parse_mode: 'HTML'
         });
@@ -722,6 +728,7 @@ export default async function handler(req, res) {
     /* ─── 5️⃣ OWNER /stats ─── */
     if (isFromOwner && txt === '/stats') {
       const status = await getStatus();
+      const statusText = (status && typeof status.text === 'string') ? status.text : '';
       await tg('sendMessage', {
         chat_id: chatId,
         text:
@@ -732,7 +739,7 @@ export default async function handler(req, res) {
           `💬 History: ${state.history.size} chats\n` +
           `👥 Known: ${state.introduced.size} users\n` +
           `⏸️ Paused: ${state.paused ? 'Yes' : 'No'}\n` +
-          `📢 Today status: ${status ? 'Set ✅' : 'None'}`,
+          `📢 Today status: ${statusText ? 'Set ✅' : 'None'}`,
         parse_mode: 'HTML'
       });
       return res.status(200).json({ ok: true });
@@ -775,7 +782,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    /* ─── 9️⃣ NON-OWNER — Regular user ─── */
+    /* ─── 9️⃣ NON-OWNER DIRECT ─── */
     if (!isFromOwner && txt && !txt.startsWith('/')) {
       if (state.paused) return res.status(200).json({ ok: true });
 
@@ -787,7 +794,6 @@ export default async function handler(req, res) {
 
       const status = await getStatus();
       const reply = await generateReply(OWNER_NAME, firstName, txt, chatId, isFirst, status);
-
       const finalMsg = `anu bot: ${reply}`;
 
       await tg('sendMessage', {
@@ -875,25 +881,22 @@ export default async function handler(req, res) {
 
   console.log('[Anu] Business from', firstName, '| first:', isFirst);
 
-  // Show typing indicator (client sees "typing...")
-  tg('sendChatAction', {
-    chat_id: chatId,
-    action: isPhoto ? 'upload_photo' : 'typing',
-    business_connection_id: bizConnId
-  }).catch(() => {});
+  /* ─── Start typing loop (auto-refresh every 4s) ─── */
+  const stopTyping = startTypingLoop(tg, chatId, bizConnId, isPhoto);
 
   const status = await getStatus();
   let reply = '';
-  if (isPhoto) {
-    reply = await analyzePhoto(OWNER_NAME, firstName, userText, isFirst, status);
-  } else {
-    reply = await generateReply(OWNER_NAME, firstName, userText, chatId, isFirst, status);
+  try {
+    if (isPhoto) {
+      reply = await analyzePhoto(OWNER_NAME, firstName, userText, isFirst, status);
+    } else {
+      reply = await generateReply(OWNER_NAME, firstName, userText, chatId, isFirst, status);
+    }
+  } finally {
+    stopTyping(); // Always stop typing indicator
   }
 
   if (!reply) reply = `Hey! How are you? 😊`;
-
-  // Small natural delay (1-2s)
-  await new Promise(r => setTimeout(r, Math.min(reply.length * 15, 1500)));
 
   const finalMsg = `anu bot: ${reply}`;
 
