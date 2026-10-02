@@ -5,7 +5,7 @@
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "functions": {
-    "api/business_bot.js": { "maxDuration": 30, "memory": 512 },
+    "api/business_bot.js": { "maxDuration": 60, "memory": 512 },
     "api/multi-ai.js":     { "maxDuration": 30 },
     "api/chat.js":         { "maxDuration": 30 }
   }
