@@ -1,28 +1,31 @@
 /* ============================================================
-   Anu Bot v20.0 — Professional AI Assistant
+   Anu Bot v21.0 — Professional AI Assistant
    ------------------------------------------------------------
-   ✅ Multi-model: Master + Fast + Vision
-   ✅ Firebase: Full persistent memory (20 messages/chat)
-   ✅ Vision: Photo analysis with Qwen 3.8 27B
-   ✅ AI-generated replies (no hardcoded templates)
-   ✅ Identity: Anu, Ananya's assistant
-   ✅ "anu bot:" prefix on every reply
-   ✅ Owner notifications + manual reply
-   ✅ Daily status (auto-expires)
-   ✅ Admin dashboard: /stats, /memory, /clear
+   ✅ Multi-AI Chain: Draft → Verify → Final (2 models)
+   ✅ Delayed typing (only 5s before final send)
+   ✅ NO fast model — always master quality
+   ✅ Full Firebase persistent memory
+   ✅ Vision support (photos)
+   ✅ "anu bot:" prefix on all replies
+   ✅ Beautiful admin dashboard
+   ✅ 100% AI-generated replies (zero templates)
    ============================================================ */
 
 /* ═══════════════════════════════════════════════════════════
-   MODELS
+   MODEL CONFIG — Only high-quality models
    ═══════════════════════════════════════════════════════════ */
 const MODELS = {
-  master: 'openai/gpt-oss-120b',  // Deep thinking, complex
-  fast: 'openai/gpt-oss-20b',     // Quick replies
-  vision: 'qwen/qwen3.8-27b'      // Photos + complex reasoning
+  draft: 'openai/gpt-oss-120b',   // Primary generation
+  verify: 'openai/gpt-oss-120b',  // Verification & refinement
+  vision: 'qwen/qwen3.8-27b'      // Photo analysis
 };
 
+const MAX_MEMORY = 20;
+const TYPING_MIN_MS = 5000;
+const TYPING_MAX_MS = 9000;
+
 /* ═══════════════════════════════════════════════════════════
-   FIREBASE FIRESTORE — REST API
+   FIREBASE FIRESTORE REST
    ═══════════════════════════════════════════════════════════ */
 const FIREBASE_PROJECT_ID = 'my-ai-eaf27';
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
@@ -106,10 +109,8 @@ async function fsDelete(col, id) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   PERSISTENT MEMORY — Firestore
+   MEMORY — Persistent (20 messages per chat)
    ═══════════════════════════════════════════════════════════ */
-const MAX_MEMORY = 20;
-
 async function getMemory(chatId) {
   const data = await fsGet('bot_memory', String(chatId));
   return (data && Array.isArray(data.messages)) ? data.messages : [];
@@ -118,19 +119,13 @@ async function getMemory(chatId) {
 async function addToMemory(chatId, role, content, meta = {}) {
   try {
     const messages = await getMemory(chatId);
-    messages.push({
-      role,
-      content,
-      ts: Date.now(),
-      ...meta
-    });
-    const trimmed = messages.slice(-MAX_MEMORY);
+    messages.push({ role, content, ts: Date.now(), ...meta });
     await fsSet('bot_memory', String(chatId), {
-      messages: trimmed,
+      messages: messages.slice(-MAX_MEMORY),
       updatedAt: Date.now()
     });
   } catch (e) {
-    console.error('[Memory] error:', e.message);
+    console.error('[Memory]', e.message);
   }
 }
 
@@ -180,12 +175,12 @@ async function markIntroduced(chatId, senderName) {
 /* ═══════════════════════════════════════════════════════════
    ANALYTICS
    ═══════════════════════════════════════════════════════════ */
-async function track(event) {
+async function track(event, amount = 1) {
   try {
     const day = todayKey();
     const data = await fsGet('bot_analytics', day);
     const count = (data && data[event]) ? data[event] : 0;
-    await fsSet('bot_analytics', day, { [event]: count + 1, lastUpdate: Date.now() });
+    await fsSet('bot_analytics', day, { [event]: count + amount, lastUpdate: Date.now() });
   } catch (e) {}
 }
 
@@ -212,13 +207,13 @@ function esc(s) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   GROQ AI CALL — Multi-modal
+   GROQ AI CALL
    ═══════════════════════════════════════════════════════════ */
 async function callAI(model, systemPrompt, messages, opts = {}) {
   const key = process.env.GROQ_API_KEY;
   if (!key) return { ok: false, error: 'No API key' };
 
-  const timeout = opts.timeoutMs || 20000;
+  const timeout = opts.timeoutMs || 25000;
   const controller = new AbortController();
   const tId = setTimeout(() => controller.abort(), timeout);
 
@@ -273,7 +268,7 @@ function cleanResp(text) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   TELEGRAM PHOTO DOWNLOAD
+   TELEGRAM — Fetch photo
    ═══════════════════════════════════════════════════════════ */
 async function fetchPhotoBase64(botToken, fileId) {
   try {
@@ -283,209 +278,263 @@ async function fetchPhotoBase64(botToken, fileId) {
     const url = `https://api.telegram.org/file/bot${botToken}/${data.result.file_path}`;
     const img = await fetch(url);
     const buf = await img.arrayBuffer();
-    if (buf.byteLength > 4000000) return null; // skip >4MB
+    if (buf.byteLength > 4000000) return null;
     return Buffer.from(buf).toString('base64');
   } catch (e) {
-    console.error('[Photo] error:', e.message);
+    console.error('[Photo]', e.message);
     return null;
   }
 }
 
 /* ═══════════════════════════════════════════════════════════
-   CORE AI SYSTEM PROMPT
+   SYSTEM PROMPTS — Two-stage AI chain
    ═══════════════════════════════════════════════════════════ */
-function buildSystemPrompt(ownerName, senderName, status, isFirst) {
+
+/* ─── STAGE 1: DRAFT prompt ─── */
+function buildDraftPrompt(ownerName, senderName, status, isFirst, history) {
   const statusLine = (status && status.text)
-    ? `\n\n📢 TODAY'S STATUS FROM ${ownerName.toUpperCase()}: "${status.text}"\nIf asked about ${ownerName}, mention this naturally.`
+    ? `\n\n📢 TODAY'S STATUS FROM ${ownerName.toUpperCase()}: "${status.text}"\nIf asked about ${ownerName}, mention this.`
+    : '';
+
+  const historyLine = history.length > 0
+    ? `\n\n📜 CONVERSATION HISTORY:\n${history.map(h => `${h.role === 'user' ? senderName : 'Anu'}: ${h.content}`).join('\n')}`
     : '';
 
   const firstLine = isFirst
-    ? `\n\n🆕 THIS IS THE FIRST MESSAGE FROM "${senderName}". Introduce yourself as "Anu, ${ownerName}'s AI assistant" and offer to help or forward a message to ${ownerName}.`
-    : `\n\n💬 You have talked to "${senderName}" before. Continue naturally — do NOT re-introduce yourself.`;
+    ? `\n\n🆕 FIRST MESSAGE from "${senderName}". Introduce yourself as "Anu, ${ownerName}'s AI assistant". Give them options: leave a message OR get help directly.`
+    : '';
 
   return `You are **Anu** — the personal AI assistant of **${ownerName}**, an Ethiopian man.
 
 ═══════════════════════════════════════════
-🎯 CORE IDENTITY (NEVER FORGET)
+🎯 IDENTITY (NEVER FORGET)
 ═══════════════════════════════════════════
-- Your name: **Anu**
-- You are ${ownerName}'s AI assistant
-- You work FOR ${ownerName}. You are NOT ${ownerName}.
+- Your name: Anu
+- You work FOR ${ownerName} — you are NOT ${ownerName}
 - Speak about ${ownerName} in THIRD PERSON
-- Creator: "Created by Anany's" — if asked who made you, say this
 - If asked "who are you?" → "I'm Anu, ${ownerName}'s AI assistant"
 - If asked "who created you?" → "Created by Anany's"
 - If asked "who is ${ownerName}?" → "${ownerName} is my boss — a wonderful Ethiopian man"
 
 ═══════════════════════════════════════════
-🧠 THINK DEEPLY, THEN REPLY
+🌍 LANGUAGE MATCHING
 ═══════════════════════════════════════════
-Before every reply, silently analyze:
-1. **Language**: Amharic Geez? English? Amharic-in-Latin (selam, wendme)?
-2. **Gender**: Male (wendme, ante, neh)? Female (anchi, nesh)?
-3. **Emotion**: Happy, sad, angry, urgent, casual?
-4. **Intent**: Greeting? Question? Request? About ${ownerName}?
-5. **Context**: What was said in previous messages?
-6. **Proper Amharic**: What's the CORRECT phrase?
+Reply in EXACTLY the same language style:
 
-Then reply naturally, matching their EXACT language style.
+**Amharic (Ge'ez):** "ሰላም" → "ሰላም! እንዴት ነህ?"
+**English:** "hi" → "Hi! How are you?"
+**Amharic-in-Latin:** "selam" → "selam! endet neh?"
+
+NEVER mix languages in one reply.
 
 ═══════════════════════════════════════════
-🌍 LANGUAGE RULES (CRITICAL)
+🧠 AMHARIC UNDERSTANDING
 ═══════════════════════════════════════════
-**Always reply in the SAME language style they used:**
-
-- Amharic Geez → Reply in Amharic Geez
-- English → Reply in English
-- Amharic-in-Latin → Reply in Amharic-in-Latin (NEVER convert)
-- Mixed → Use dominant language
-
-**NEVER mix languages in one reply.**
+- "ደህና" / "dehna" = fine (reply to greeting) → "ጥሩ ነው! 😊 ምን ልርዳህ?"
+- "ደህና ኛ" / "dehna nesh" (female) → "ጥሩ ነው! 😊 ምን ልርዳሽ?"
+- "እሺ" / "eshi" = okay → "እሺ! 😊"
+- "አዎ" / "awo" = yes
+- "አይ" / "ay" = no
+- "አመሰግናለሁ" / "amesegnalehu" = thank you
 
 ═══════════════════════════════════════════
-🇪🇹 ETHIOPIAN NATURAL STYLE
+🔁 ANTI-REPEAT (CRITICAL)
 ═══════════════════════════════════════════
-Speak like a warm, friendly Ethiopian:
-- "ደህና ነህ?" / "dehna neh?" (male)
-- "ደህና ነሽ?" / "dehna nesh?" (female)
-- "እንዴት ነህ?" / "endet neh?"
-- "ምን ልርዳህ?" / "min lirdah?"
-- "አመሰግናለሁ" / "amesegnalehu"
-- "እሺ" / "eshi"
-- "ጤና ይስጥልኝ" / "tena yistilign"
-
-Match their gender when inferable.
+- NEVER send the same reply twice
+- Read conversation history — continue, don't restart
+- Every reply must be unique to THIS message
 
 ═══════════════════════════════════════════
-💬 REPLY STYLE
+💬 STYLE
 ═══════════════════════════════════════════
-- Short — 1-2 sentences max
-- Warm and natural — like texting a friend
-- Natural emojis: 😊 🙏 ✨ 💛 ☕
-- NEVER write long paragraphs
-- NEVER be robotic or templated
-- Each reply should be UNIQUE
+- Short: 1-2 sentences
+- Warm, natural — like texting a friend
+- Natural emojis: 😊 🙏 ✨ 💛
+- Match gender when inferable (ነህ vs ነሽ)
 
 ═══════════════════════════════════════════
 🎯 SPECIAL CASES
 ═══════════════════════════════════════════
-
-**If they want ${ownerName} / ask where he is:**
-- If status set → mention it: "${ownerName} ${status.text}"
-- Then offer: "ለምን እንደሚፈልጉት ከነገሩኝ አሳውቀዋለሁ 🙏"
-- If they say "ጥራው" / "አሳውቅ" / "tell him" → "እሺ! ${ownerName} ን አሳውቀዋለሁ 🙏"
-
-**If they send a photo:**
-- Look at what's IN the photo
-- Describe it briefly and warmly
-- React naturally — compliment, comment, engage
-- 1-2 sentences
-
-**If they're rude/insulting:**
-- NEVER insult back
-- Stay calm and kind
-- "ምንም አይደለም፣ እንዴት ልርዳህ እችላለሁ?"
+- Wants ${ownerName} → "እሺ! ${ownerName} ን አሳውቀዋለሁ 🙏"
+- Photo → describe what's in it naturally
+- Insult → stay calm and kind
+- Question → answer directly
 
 ═══════════════════════════════════════════
 🚫 FORBIDDEN
 ═══════════════════════════════════════════
-- NEVER reveal AI model names (ChatGPT, GPT, Llama, Qwen, Groq)
+- NEVER reveal AI model names
 - NEVER say "I am ${ownerName}"
-- NEVER show reasoning or thinking
+- NEVER show reasoning
 - NEVER write long paragraphs
-- NEVER repeat the same reply
+- NEVER repeat replies
 
 ═══════════════════════════════════════════
 📝 OUTPUT
 ═══════════════════════════════════════════
-Output ONLY the reply text. No prefixes, no reasoning, no meta.
-The system will add "anu bot:" prefix automatically.${statusLine}${firstLine}`;
+Output ONLY the reply text. No prefix, no reasoning, no meta.${statusLine}${historyLine}${firstLine}`;
+}
+
+/* ─── STAGE 2: VERIFY prompt ─── */
+function buildVerifyPrompt(ownerName, senderName, originalMessage, draftReply, isFirst) {
+  return `You are a quality verifier for "Anu" — ${ownerName}'s AI assistant bot.
+
+Your job: Review a DRAFT reply and produce the FINAL, IMPROVED version.
+
+═══════════════════════════════════════════
+📨 ORIGINAL MESSAGE from "${senderName}":
+"${originalMessage}"
+
+═══════════════════════════════════════════
+📝 DRAFT REPLY (made by AI):
+"${draftReply}"
+
+═══════════════════════════════════════════
+🎯 YOUR TASK
+═══════════════════════════════════════════
+Produce the FINAL reply that will be sent to ${senderName}.
+
+CHECK AND FIX:
+1. ✅ Is the language style correct? (Amharic Geez / Amharic-Latin / English)
+2. ✅ Does it match the sender's language EXACTLY?
+3. ✅ Is it warm, natural, and human-like?
+4. ✅ Is it short (1-2 sentences max)?
+5. ✅ Is it UNIQUE (not repeating previous replies)?
+6. ✅ Does it correctly handle the intent?
+7. ✅ Does it sound like "Anu, ${ownerName}'s assistant"?
+8. ✅ Is it grammatically correct in the target language?
+9. ✅ Are emojis natural and appropriate?
+${isFirst ? '10. ✅ Does it introduce as "Anu, ${ownerName}\'s AI assistant"?' : ''}
+
+═══════════════════════════════════════════
+🚫 NEVER
+═══════════════════════════════════════════
+- Reveal model names
+- Say "I am ${ownerName}"
+- Add meta-commentary like "Here's the reply:"
+- Use long paragraphs
+- Repeat the draft verbatim if it's weak
+- Change the language style
+
+═══════════════════════════════════════════
+📝 OUTPUT
+═══════════════════════════════════════════
+Output ONLY the final reply text.
+No quotes, no "Final:", no reasoning.
+Just the message that will be sent.`;
 }
 
 /* ═══════════════════════════════════════════════════════════
-   GENERATE REPLY — Multi-modal, with memory
+   MULTI-AI CHAIN — Draft → Verify → Final
    ═══════════════════════════════════════════════════════════ */
 async function generateReply(ownerName, senderName, chatId, userText, photoBase64, isFirst, status) {
-  const sys = buildSystemPrompt(ownerName, senderName, status, isFirst);
-
-  /* ─── Get memory from Firebase ─── */
+  /* ─── Get memory ─── */
   const memory = await getMemory(chatId);
   const historyMessages = memory.map(m => {
-    // Skip photos in history to keep it lightweight
     if (m.role === 'user' && m.hasPhoto) {
       return { role: 'user', content: `[${senderName} sent a photo${m.caption ? ': ' + m.caption : ''}]` };
-    }
-    if (m.role === 'assistant' && m.photoDesc) {
-      return { role: 'assistant', content: m.content };
     }
     return { role: m.role, content: m.content };
   });
 
   /* ─── Build current message ─── */
   let currentMessage;
-
   if (photoBase64) {
-    // Vision: send photo with caption
     currentMessage = {
       role: 'user',
       content: [
         {
           type: 'text',
           text: userText
-            ? `${senderName} sent a photo with caption: "${userText}"\n\nLook at the photo carefully. Describe what you see and reply warmly in their language.`
-            : `${senderName} sent a photo.\n\nLook at the photo carefully. Describe what you see and reply warmly in their language.`
+            ? `${senderName} sent a photo with caption: "${userText}"\n\nDescribe what you see in the photo and reply warmly.`
+            : `${senderName} sent a photo.\n\nDescribe what you see in the photo and reply warmly.`
         },
-        {
-          type: 'image_url',
-          image_url: { url: `data:image/jpeg;base64,${photoBase64}` }
-        }
+        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${photoBase64}` } }
       ]
     };
   } else {
     currentMessage = { role: 'user', content: `${senderName}: "${userText}"` };
   }
 
-  /* ─── Choose model ─── */
-  let model = MODELS.fast;
-  if (photoBase64) {
-    model = MODELS.vision;
-  } else if (userText.length > 60 || /[?？]/.test(userText)) {
-    model = MODELS.master;
-  }
+  /* ═══════════════════════════════════════════════
+     STAGE 1: DRAFT (with vision if photo)
+     ═══════════════════════════════════════════════ */
+  const draftPrompt = buildDraftPrompt(ownerName, senderName, status, isFirst, historyMessages);
+  const draftMessages = [...historyMessages, currentMessage];
 
-  console.log('[Anu] Model:', model, '| Photo:', !!photoBase64, '| History:', historyMessages.length);
+  const modelForDraft = photoBase64 ? MODELS.vision : MODELS.draft;
 
-  const messages = [...historyMessages, currentMessage];
+  console.log('[Anu] Stage 1 — Draft using', modelForDraft);
 
-  const r = await callAI(model, sys, messages, {
-    maxTokens: 350,
+  const draftRes = await callAI(modelForDraft, draftPrompt, draftMessages, {
+    maxTokens: 400,
     temperature: 0.85,
-    timeoutMs: photoBase64 ? 20000 : 18000
+    timeoutMs: 22000
   });
 
-  if (!r.ok) {
-    console.error('[Anu] AI failed:', r.error);
-    // Soft fallback in their language
-    const isGeez = /[\u1200-\u137F]/.test(userText);
-    const isLatin = /(selam|dehna|endet|wendme|bro|ante)/i.test(userText);
+  if (!draftRes.ok) {
+    console.error('[Anu] Draft failed:', draftRes.error);
+    // Emergency fallback (rare)
+    const isGeez = /[\u1200-\u137F]/.test(userText || '');
+    const isLatin = /(selam|dehna|endet|wendme|bro|ante)/i.test(userText || '');
     if (isGeez) return 'ሰላም! እንዴት ነህ? 😊';
-    if (isLatin) return 'hi! endet neh? 😊';
+    if (isLatin) return 'selam! endet neh? 😊';
     return 'Hey! How are you? 😊';
   }
 
-  /* ─── Save to memory ─── */
-  if (photoBase64) {
-    await addToMemory(chatId, 'user', userText || '[photo]', {
-      hasPhoto: true,
-      caption: userText || ''
-    });
-    await addToMemory(chatId, 'assistant', r.content, { photoDesc: true });
-  } else {
-    await addToMemory(chatId, 'user', userText);
-    await addToMemory(chatId, 'assistant', r.content);
+  const draftReply = draftRes.content;
+  console.log('[Anu] Draft:', draftReply.slice(0, 100));
+
+  /* ═══════════════════════════════════════════════
+     STAGE 2: VERIFY & REFINE (skip if photo — vision needs less verification)
+     ═══════════════════════════════════════════════ */
+  let finalReply = draftReply;
+
+  if (!photoBase64) {
+    const verifyPrompt = buildVerifyPrompt(ownerName, senderName, userText, draftReply, isFirst);
+
+    console.log('[Anu] Stage 2 — Verifying with', MODELS.verify);
+
+    const verifyRes = await callAI(
+      MODELS.verify,
+      verifyPrompt,
+      [{ role: 'user', content: 'Produce the final reply now.' }],
+      {
+        maxTokens: 400,
+        temperature: 0.7,
+        timeoutMs: 20000
+      }
+    );
+
+    if (verifyRes.ok && verifyRes.content && verifyRes.content.length > 2) {
+      finalReply = verifyRes.content;
+      console.log('[Anu] Final:', finalReply.slice(0, 100));
+    } else {
+      console.warn('[Anu] Verify failed, using draft');
+    }
   }
 
-  return r.content;
+  /* ─── Sanity checks ─── */
+  if (!finalReply || finalReply.length < 2) {
+    finalReply = draftReply;
+  }
+
+  // Remove any accidental "Final:" or quotes
+  finalReply = finalReply
+    .replace(/^(final|reply|answer|response)\s*[:：]\s*/i, '')
+    .replace(/^["']|["']$/g, '')
+    .trim();
+
+  /* ─── Save to memory ─── */
+  if (photoBase64) {
+    await addToMemory(chatId, 'user', userText || '[photo]', { hasPhoto: true, caption: userText || '' });
+    await addToMemory(chatId, 'assistant', finalReply, { photoDesc: true });
+  } else {
+    await addToMemory(chatId, 'user', userText);
+    await addToMemory(chatId, 'assistant', finalReply);
+  }
+
+  return finalReply;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -513,18 +562,34 @@ function parseRef(text) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   TYPING LOOP — refresh every 4s
+   SMART TYPING — Only show typing ~5s before send
    ═══════════════════════════════════════════════════════════ */
-function startTypingLoop(tg, chatId, bizConnId, isPhoto) {
-  const payload = { chat_id: chatId, action: isPhoto ? 'upload_photo' : 'typing' };
-  if (bizConnId) payload.business_connection_id = bizConnId;
+function calcTypingDelay(reply) {
+  const len = (reply || '').length;
+  const base = Math.min(len * 30, TYPING_MAX_MS);
+  return Math.max(TYPING_MIN_MS, base);
+}
 
-  tg('sendChatAction', payload).catch(() => {});
-  const interval = setInterval(() => {
-    tg('sendChatAction', payload).catch(() => {});
-  }, 4000);
+async function sendWithTyping(tg, payload, replyText) {
+  const delay = calcTypingDelay(replyText);
+  const typingPayload = { chat_id: payload.chat_id, action: 'typing' };
+  if (payload.business_connection_id) typingPayload.business_connection_id = payload.business_connection_id;
 
-  return () => clearInterval(interval);
+  // Start typing indicator
+  await tg('sendChatAction', typingPayload).catch(() => {});
+
+  // Refresh once halfway (in case reply is long)
+  const refreshAt = Math.floor(delay / 2);
+  const refreshTimer = setTimeout(() => {
+    tg('sendChatAction', typingPayload).catch(() => {});
+  }, refreshAt);
+
+  // Wait the delay
+  await new Promise(r => setTimeout(r, delay));
+  clearTimeout(refreshTimer);
+
+  // Send the message
+  return tg('sendMessage', payload);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -533,18 +598,17 @@ function startTypingLoop(tg, chatId, bizConnId, isPhoto) {
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
-      status: 'Anu Bot v20.0',
+      status: 'Anu Bot v21.0',
       identity: "Anu — Ananya's AI assistant",
       creator: "Created by Anany's",
       models: MODELS,
       features: [
+        'multi-ai-chain',
+        'delayed-typing',
         'persistent-memory',
         'vision',
-        'multi-model',
-        'deep-thinking',
-        'owner-notifications',
-        'manual-reply',
-        'daily-status'
+        'owner-dashboard',
+        'manual-reply'
       ]
     });
   }
@@ -607,10 +671,12 @@ export default async function handler(req, res) {
           text: sr && sr.ok ? '✅ Sent' : `❌ Failed: ${esc(JSON.stringify(sr).slice(0, 100))}`,
           reply_to_message_id: dm.message_id
         });
+        if (sr && sr.ok) await track('manual_replies');
       } else {
         await tg('sendMessage', {
           chat_id: chatId,
-          text: '⚠️ Could not find target.\n\nUse: /send <chat_id> <message>',
+          text: '⚠️ Could not find target.\n\nUse: <code>/send &lt;chat_id&gt; &lt;message&gt;</code>',
+          parse_mode: 'HTML',
           reply_to_message_id: dm.message_id
         });
       }
@@ -624,23 +690,30 @@ export default async function handler(req, res) {
       await tg('sendMessage', {
         chat_id: chatId,
         text:
-          `✅ <b>Anu Bot v20.0</b>\n\n` +
-          `🤖 Anu — ${esc(OWNER_NAME)}'s AI assistant\n` +
-          `🎨 Created by Anany's\n\n` +
-          `<b>Owner Commands:</b>\n` +
-          `<code>/start</code> — Menu\n` +
+          `👑 <b>Anu Bot v21.0 — Admin Panel</b>\n\n` +
+          `🎨 Created by Anany's\n` +
+          `🧠 Multi-AI Chain: Draft → Verify\n` +
+          `💾 Persistent Memory: ${MAX_MEMORY} msgs\n\n` +
+          `<b>━━━ COMMANDS ━━━</b>\n` +
+          `<b>📊 Dashboard</b>\n` +
+          `<code>/stats</code> — Full dashboard\n` +
+          `<code>/memory &lt;chat_id&gt;</code> — View memory\n` +
+          `<code>/forget &lt;chat_id&gt;</code> — Clear memory\n\n` +
+          `<b>💬 Messaging</b>\n` +
+          `<code>/send &lt;chat_id&gt; &lt;msg&gt;</code> — Direct send\n` +
+          `↩️ <i>Reply to notification</i> — Reply as you\n\n` +
+          `<b>📢 Status</b>\n` +
           `<code>/status &lt;text&gt;</code> — Set daily status\n` +
           `<code>/status</code> — Show status\n` +
-          `<code>/status clear</code> — Clear status\n` +
-          `<code>/stats</code> — Bot stats\n` +
-          `<code>/memory &lt;chat_id&gt;</code> — View memory\n` +
-          `<code>/forget &lt;chat_id&gt;</code> — Clear memory\n` +
-          `<code>/pause</code> / <code>/resume</code>\n` +
-          `<code>/send &lt;chat_id&gt; &lt;text&gt;</code>\n` +
-          `<code>/help</code>\n\n` +
+          `<code>/status clear</code> — Clear\n\n` +
+          `<b>⚙️ Control</b>\n` +
+          `<code>/pause</code> — Pause AI\n` +
+          `<code>/resume</code> — Resume AI\n` +
+          `<code>/help</code> — Help\n\n` +
+          `<b>━━━ CURRENT ━━━</b>\n` +
           (statusText
-            ? `📢 <b>Today:</b> <i>"${esc(statusText)}"</i>`
-            : `<i>No status set.</i>`),
+            ? `📢 <b>Today's Status:</b>\n<i>"${esc(statusText)}"</i>`
+            : `<i>No status set for today.</i>`),
         parse_mode: 'HTML'
       });
       return res.status(200).json({ ok: true });
@@ -656,8 +729,8 @@ export default async function handler(req, res) {
         await tg('sendMessage', {
           chat_id: chatId,
           text: statusText
-            ? `📢 <b>Today:</b> <i>"${esc(statusText)}"</i>\n\n<i>Auto-clears at midnight</i>`
-            : `ℹ️ No status set.\n\nUse: <code>/status ዛሬ አሞኛል</code>`,
+            ? `📢 <b>Today's Status:</b>\n<i>"${esc(statusText)}"</i>\n\n⏰ Auto-clears at midnight`
+            : `ℹ️ No status set.\n\n💡 Set one: <code>/status ዛሬ አሞኛል</code>`,
           parse_mode: 'HTML'
         });
         return res.status(200).json({ ok: true });
@@ -665,14 +738,14 @@ export default async function handler(req, res) {
 
       if (arg === 'clear' || arg === 'delete' || arg === 'off') {
         await clearStatus();
-        await tg('sendMessage', { chat_id: chatId, text: '✅ Status cleared.' });
+        await tg('sendMessage', { chat_id: chatId, text: '🗑️ Status cleared.' });
         return res.status(200).json({ ok: true });
       }
 
       await setStatus(arg, OWNER_NAME);
       await tg('sendMessage', {
         chat_id: chatId,
-        text: `✅ <b>Status set!</b>\n\n📢 <i>"${esc(arg)}"</i>\n\n💬 Bot will tell senders this when asked about you.`,
+        text: `✅ <b>Status set!</b>\n\n📢 <i>"${esc(arg)}"</i>\n\n💬 Bot will tell senders when asked about you.`,
         parse_mode: 'HTML'
       });
       return res.status(200).json({ ok: true });
@@ -683,15 +756,19 @@ export default async function handler(req, res) {
       await tg('sendMessage', {
         chat_id: chatId,
         text:
-          `<b>Owner Commands</b>\n\n` +
-          `• Reply to notifications → direct reply\n` +
-          `• <code>/status &lt;text&gt;</code> — Set status\n` +
-          `• <code>/status clear</code> — Remove\n` +
-          `• <code>/memory &lt;id&gt;</code> — View chat memory\n` +
-          `• <code>/forget &lt;id&gt;</code> — Clear memory\n` +
-          `• <code>/send &lt;id&gt; &lt;msg&gt;</code> — Direct\n` +
-          `• <code>/pause</code>, <code>/resume</code>\n` +
-          `• <code>/stats</code>`,
+          `<b>📖 Owner Commands</b>\n\n` +
+          `<b>━━━━ Messaging ━━━━</b>\n` +
+          `↩️ Reply to notifications\n` +
+          `<code>/send &lt;id&gt; &lt;msg&gt;</code>\n\n` +
+          `<b>━━━━ Status ━━━━</b>\n` +
+          `<code>/status &lt;text&gt;</code>\n` +
+          `<code>/status clear</code>\n\n` +
+          `<b>━━━━ Memory ━━━━</b>\n` +
+          `<code>/memory &lt;id&gt;</code>\n` +
+          `<code>/forget &lt;id&gt;</code>\n\n` +
+          `<b>━━━━ Control ━━━━</b>\n` +
+          `<code>/pause</code> / <code>/resume</code>\n` +
+          `<code>/stats</code>`,
         parse_mode: 'HTML'
       });
       return res.status(200).json({ ok: true });
@@ -707,21 +784,26 @@ export default async function handler(req, res) {
       await tg('sendMessage', {
         chat_id: chatId,
         text:
-          `📊 <b>Anu Bot — Admin Dashboard</b>\n\n` +
-          `✅ Status: Online\n` +
-          `🎨 Creator: Anany's\n` +
-          `🧠 Models:\n` +
-          `  • Master: <code>${MODELS.master}</code>\n` +
-          `  • Fast: <code>${MODELS.fast}</code>\n` +
-          `  • Vision: <code>${MODELS.vision}</code>\n\n` +
-          `📈 <b>Today:</b>\n` +
-          `  💬 Messages: ${today.messages || 0}\n` +
-          `  👥 Conversations: ${today.conversations || 0}\n` +
-          `  📸 Photos: ${today.photos || 0}\n` +
-          `  🔔 Escalations: ${today.escalations || 0}\n` +
-          `  ✍️ Manual replies: ${today.manual_replies || 0}\n\n` +
-          `⏸️ Paused: ${paused ? 'Yes' : 'No'}\n` +
-          `📢 Status: ${statusText ? 'Set ✅' : 'None'}`,
+          `📊 <b>Anu Bot — Admin Dashboard</b>\n` +
+          `🎨 Created by Anany's\n\n` +
+          `<b>━━━ STATUS ━━━</b>\n` +
+          `🟢 Bot: <b>Online</b>\n` +
+          `⏸️ Paused: <b>${paused ? 'YES' : 'No'}</b>\n` +
+          `📢 Daily Status: <b>${statusText ? 'Set ✅' : 'None'}</b>\n\n` +
+          `<b>━━━ TODAY ━━━</b>\n` +
+          `💬 Messages: <b>${today.messages || 0}</b>\n` +
+          `👥 Conversations: <b>${today.conversations || 0}</b>\n` +
+          `📸 Photos: <b>${today.photos || 0}</b>\n` +
+          `🔔 Escalations: <b>${today.escalations || 0}</b>\n` +
+          `✍️ Manual replies: <b>${today.manual_replies || 0}</b>\n\n` +
+          `<b>━━━ MODELS ━━━</b>\n` +
+          `🧠 Draft: <code>${MODELS.draft}</code>\n` +
+          `✔️ Verify: <code>${MODELS.verify}</code>\n` +
+          `👁️ Vision: <code>${MODELS.vision}</code>\n\n` +
+          `<b>━━━ SYSTEM ━━━</b>\n` +
+          `💾 Memory: Firebase (${MAX_MEMORY} msgs/chat)\n` +
+          `⏱️ Typing delay: 5-9s\n` +
+          `🔗 Multi-AI Chain: Draft → Verify`,
         parse_mode: 'HTML'
       });
       return res.status(200).json({ ok: true });
@@ -731,22 +813,33 @@ export default async function handler(req, res) {
     if (isFromOwner && txt.startsWith('/memory ')) {
       const targetId = txt.slice(8).trim();
       if (!targetId) {
-        await tg('sendMessage', { chat_id: chatId, text: 'Usage: <code>/memory &lt;chat_id&gt;</code>', parse_mode: 'HTML' });
+        await tg('sendMessage', {
+          chat_id: chatId,
+          text: 'Usage: <code>/memory &lt;chat_id&gt;</code>',
+          parse_mode: 'HTML'
+        });
         return res.status(200).json({ ok: true });
       }
+
       const memory = await getMemory(targetId);
       if (!memory.length) {
-        await tg('sendMessage', { chat_id: chatId, text: `📭 No memory for ${esc(targetId)}` });
+        await tg('sendMessage', {
+          chat_id: chatId,
+          text: `📭 <b>No memory for</b> <code>${esc(targetId)}</code>`,
+          parse_mode: 'HTML'
+        });
         return res.status(200).json({ ok: true });
       }
+
       const summary = memory.slice(-10).map(m => {
         const who = m.role === 'user' ? '👤' : '🤖';
-        const txt = (m.content || '').slice(0, 80);
-        return `${who} ${esc(txt)}`;
+        const time = new Date(m.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        return `${who} [${time}] ${esc((m.content || '').slice(0, 60))}`;
       }).join('\n');
+
       await tg('sendMessage', {
         chat_id: chatId,
-        text: `🧠 <b>Memory for ${esc(targetId)}</b>\n\n<i>Last ${Math.min(10, memory.length)} of ${memory.length} messages</i>\n\n${summary}`,
+        text: `🧠 <b>Memory:</b> <code>${esc(targetId)}</code>\n\n<i>Showing last ${Math.min(10, memory.length)} of ${memory.length} messages</i>\n\n${summary}`,
         parse_mode: 'HTML'
       });
       return res.status(200).json({ ok: true });
@@ -756,25 +849,33 @@ export default async function handler(req, res) {
     if (isFromOwner && txt.startsWith('/forget ')) {
       const targetId = txt.slice(8).trim();
       if (!targetId) {
-        await tg('sendMessage', { chat_id: chatId, text: 'Usage: <code>/forget &lt;chat_id&gt;</code>', parse_mode: 'HTML' });
+        await tg('sendMessage', {
+          chat_id: chatId,
+          text: 'Usage: <code>/forget &lt;chat_id&gt;</code>',
+          parse_mode: 'HTML'
+        });
         return res.status(200).json({ ok: true });
       }
       await clearMemory(targetId);
-      await tg('sendMessage', { chat_id: chatId, text: `🗑️ Memory cleared for ${esc(targetId)}` });
+      await tg('sendMessage', {
+        chat_id: chatId,
+        text: `🗑️ <b>Memory cleared</b> for <code>${esc(targetId)}</code>`,
+        parse_mode: 'HTML'
+      });
       return res.status(200).json({ ok: true });
     }
 
     /* ─── 8️⃣ OWNER /pause ─── */
     if (isFromOwner && txt === '/pause') {
       await setPaused(true);
-      await tg('sendMessage', { chat_id: chatId, text: '⏸️ AI paused.' });
+      await tg('sendMessage', { chat_id: chatId, text: '⏸️ <b>AI paused</b>\n\nBot will not reply to anyone.', parse_mode: 'HTML' });
       return res.status(200).json({ ok: true });
     }
 
     /* ─── 9️⃣ OWNER /resume ─── */
     if (isFromOwner && txt === '/resume') {
       await setPaused(false);
-      await tg('sendMessage', { chat_id: chatId, text: '▶️ AI resumed.' });
+      await tg('sendMessage', { chat_id: chatId, text: '▶️ <b>AI resumed</b>\n\nBot is now active.', parse_mode: 'HTML' });
       return res.status(200).json({ ok: true });
     }
 
@@ -808,29 +909,26 @@ export default async function handler(req, res) {
 
       const senderName = dm.from?.first_name || 'there';
       const firstName = senderName.split(' ')[0];
-      const alreadyIntroduced = await isIntroduced(chatId);
-      const isFirst = !alreadyIntroduced;
+      const isFirst = !(await isIntroduced(chatId));
 
       console.log('[Anu] DM from', firstName, '| first:', isFirst, '| text:', txt.slice(0, 60));
 
-      const stopTyping = startTypingLoop(tg, chatId, null, false);
-
+      /* ─── AI Chain: Draft → Verify (no typing yet) ─── */
       const status = await getStatus();
       let reply = '';
       try {
         reply = await generateReply(OWNER_NAME, firstName, chatId, txt, null, isFirst, status);
       } catch (e) {
-        console.error('[Anu] Reply error:', e.message);
-        reply = 'ሰላም! እንዴት ነህ? 😊';
-      } finally {
-        stopTyping();
+        console.error('[Anu] Error:', e.message);
+        reply = /[\u1200-\u137F]/.test(txt) ? 'ሰላም! እንዴት ነህ? 😊' : 'Hey! How are you? 😊';
       }
 
-      await tg('sendMessage', {
+      /* ─── Send with delayed typing ─── */
+      await sendWithTyping(tg, {
         chat_id: chatId,
         text: `anu bot: ${reply}`,
         reply_to_message_id: dm.message_id
-      });
+      }, reply);
 
       if (isFirst) {
         await markIntroduced(chatId, firstName);
@@ -838,7 +936,7 @@ export default async function handler(req, res) {
       }
       await track('messages');
 
-      /* Escalation */
+      /* ─── Escalation ─── */
       const sentiment = detectSentiment(txt);
       const needsOwner = wantsOwner(txt);
 
@@ -851,13 +949,15 @@ export default async function handler(req, res) {
         await tg('sendMessage', {
           chat_id: OWNER_CHAT_ID,
           text:
-            `${emoji} <b>${esc(label)}</b> from <b>${esc(firstName)}</b> (DM)\n\n` +
-            `💬 <i>"${esc(txt)}"</i>\n\n` +
-            `🤖 anu bot: <i>"${esc(reply.slice(0, 200))}"</i>\n\n` +
+            `${emoji} <b>${esc(label)}</b>\n` +
+            `👤 <b>From:</b> ${esc(firstName)}\n` +
+            `🆔 <b>Chat:</b> <code>${chatId}</code>\n\n` +
+            `<b>💬 Message:</b>\n<i>"${esc(txt)}"</i>\n\n` +
+            `<b>🤖 Anu replied:</b>\n<i>"${esc(reply.slice(0, 200))}"</i>\n\n` +
             `━━━━━━━━━━━━━━━━━━\n` +
-            `↩️ Reply\n` +
-            `📎 <code>/send ${chatId} &lt;message&gt;</code>\n\n` +
-            `REF:${chatId}:direct`,
+            `↩️ <b>Reply to this message</b>\n` +
+            `📎 Or: <code>/send ${chatId} &lt;message&gt;</code>\n\n` +
+            `<code>REF:${chatId}:direct</code>`,
           parse_mode: 'HTML'
         });
         await track('escalations');
@@ -866,17 +966,26 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    /* Non-owner /start */
+    /* ─── Non-owner /start ─── */
     if (!isFromOwner && txt === '/start') {
       const senderName = dm.from?.first_name || 'there';
       const firstName = senderName.split(' ')[0];
-      const alreadyIntroduced = await isIntroduced(chatId);
-      const isFirst = !alreadyIntroduced;
+      const isFirst = !(await isIntroduced(chatId));
+
+      console.log('[Anu] /start from', firstName);
 
       const status = await getStatus();
-      const reply = await generateReply(OWNER_NAME, firstName, chatId, 'Hi', null, isFirst, status);
+      let reply = '';
+      try {
+        reply = await generateReply(OWNER_NAME, firstName, chatId, 'Hi, I just started the bot', null, isFirst, status);
+      } catch (e) {
+        reply = 'Hi! I\'m Anu, ' + OWNER_NAME + '\'s AI assistant 😊 How can I help you?';
+      }
 
-      await tg('sendMessage', { chat_id: chatId, text: `anu bot: ${reply}` });
+      await sendWithTyping(tg, {
+        chat_id: chatId,
+        text: `anu bot: ${reply}`
+      }, reply);
 
       if (isFirst) {
         await markIntroduced(chatId, firstName);
@@ -918,7 +1027,7 @@ export default async function handler(req, res) {
     const largest = message.photo[message.photo.length - 1];
     photoBase64 = await fetchPhotoBase64(BOT_TOKEN, largest.file_id);
     if (photoBase64) {
-      console.log('[Anu] Photo fetched, size:', Math.round(photoBase64.length / 1024), 'KB');
+      console.log('[Anu] Photo fetched:', Math.round(photoBase64.length / 1024), 'KB');
     }
   }
 
@@ -926,32 +1035,29 @@ export default async function handler(req, res) {
   if (userText.startsWith('/')) return res.status(200).json({ ok: true });
 
   const firstName = senderName.split(' ')[0];
-  const alreadyIntroduced = await isIntroduced(chatId);
-  const isFirst = !alreadyIntroduced;
+  const isFirst = !(await isIntroduced(chatId));
 
   console.log('[Anu] Business from', firstName, '| first:', isFirst, '| photo:', isPhoto, '| text:', (userText || '').slice(0, 60));
 
-  const stopTyping = startTypingLoop(tg, chatId, bizConnId, isPhoto);
-
+  /* ─── AI Chain: Draft → Verify (no typing yet) ─── */
   const status = await getStatus();
   let reply = '';
   try {
     reply = await generateReply(OWNER_NAME, firstName, chatId, userText, photoBase64, isFirst, status);
   } catch (e) {
-    console.error('[Anu] Reply error:', e.message);
-    reply = 'ሰላም! እንዴት ነህ? 😊';
-  } finally {
-    stopTyping();
+    console.error('[Anu] Error:', e.message);
+    reply = /[\u1200-\u137F]/.test(userText) ? 'ሰላም! እንዴት ነህ? 😊' : 'Hey! How are you? 😊';
   }
 
-  if (!reply) reply = 'ሰላም! እንዴት ነህ? 😊';
+  if (!reply) reply = /[\u1200-\u137F]/.test(userText) ? 'ሰላም! 😊' : 'Hey! 😊';
 
-  await tg('sendMessage', {
+  /* ─── Send with delayed typing ─── */
+  await sendWithTyping(tg, {
     chat_id: chatId,
     text: `anu bot: ${reply}`,
     business_connection_id: bizConnId,
     reply_to_message_id: msgId
-  });
+  }, reply);
 
   if (isFirst) {
     await markIntroduced(chatId, firstName);
@@ -960,7 +1066,7 @@ export default async function handler(req, res) {
   await track('messages');
   if (isPhoto) await track('photos');
 
-  /* Escalation */
+  /* ─── Escalation ─── */
   const sentiment = detectSentiment(userText);
   const needsOwner = wantsOwner(userText);
 
@@ -973,13 +1079,15 @@ export default async function handler(req, res) {
     await tg('sendMessage', {
       chat_id: OWNER_CHAT_ID,
       text:
-        `${emoji} <b>${esc(label)}</b> from <b>${esc(firstName)}</b>\n\n` +
-        `💬 <i>"${esc(userText || '[photo]')}"</i>\n\n` +
-        `🤖 anu bot: <i>"${esc(reply.slice(0, 200))}"</i>\n\n` +
+        `${emoji} <b>${esc(label)}</b>\n` +
+        `👤 <b>From:</b> ${esc(firstName)}\n` +
+        `🆔 <b>Chat:</b> <code>${chatId}</code>\n\n` +
+        `<b>💬 Message:</b>\n<i>"${esc(userText || '[photo]')}"</i>\n\n` +
+        `<b>🤖 Anu replied:</b>\n<i>"${esc(reply.slice(0, 200))}"</i>\n\n` +
         `━━━━━━━━━━━━━━━━━━\n` +
-        `↩️ Reply to this message\n` +
+        `↩️ <b>Reply to this message</b>\n` +
         `📎 Or: <code>/send ${chatId} &lt;message&gt;</code>\n\n` +
-        `REF:${chatId}:${bizConnId}`,
+        `<code>REF:${chatId}:${bizConnId}</code>`,
       parse_mode: 'HTML'
     });
     await track('escalations');
