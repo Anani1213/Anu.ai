@@ -1,1072 +1,969 @@
-/* ============================================================
-   Anu Multi-Tenant SaaS Bot v23.0
-   ------------------------------------------------------------
-   ✅ One bot, multi-personality
-   ✅ Admin routing by chatId
-   ✅ Registered clients get own AI config
-   ✅ Unregistered → WebApp registration
-   ✅ Trial/Active/Paused/Expired status
-   ✅ Message limits per plan
-   ✅ Admin dashboard via Telegram + WebApp
-   ============================================================ */
+// api/business_bot.js
+// ─────────────────────────────────────────────────────────────────────────────
+// Anu — Ananya's personal AI assistant (Telegram Business Bot)
+// Vercel Serverless Function · Node.js 20+ ESM · zero npm deps (native fetch)
+// ─────────────────────────────────────────────────────────────────────────────
 
-const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
-const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+// ═══════════════ CONFIG ═══════════════
+const TOKEN = process.env.BUSINESS_BOT_TOKEN || "";
+const OWNER_CHAT_ID = String(process.env.OWNER_CHAT_ID || "");
+const OWNER_NAME = process.env.OWNER_NAME || "Ananya";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GROQ_MODEL = "openai/gpt-oss-120b";
+const PROJECT_ID = "my-ai-eaf27";
+const FS_BASE = "https://firestore.googleapis.com/v1/projects/" + PROJECT_ID + "/databases/(default)/documents";
+const TG_BASE = TOKEN ? "https://api.telegram.org/bot" + TOKEN : "";
+const AI_TIMEOUT_MS = 18000;
+const PHOTO_MAX_BYTES = 4 * 1024 * 1024;
 
-const MODELS = {
-  gemini: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-  groq: 'openai/gpt-oss-120b'
-};
+// ═══════════════ SMALL UTILS ═══════════════
+const esc = (s) =>
+  String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 
-const PLANS = {
-  free:     { limit: 50,     days: 14,  name: 'Free Trial' },
-  starter:  { limit: 500,    days: 30,  name: 'Starter' },
-  pro:      { limit: 5000,   days: 30,  name: 'Pro' },
-  business: { limit: 20000,  days: 30,  name: 'Business' }
-};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/* ═══════════════════════════════════════════════════════════
-   FIREBASE
-   ═══════════════════════════════════════════════════════════ */
-const FIREBASE_PROJECT_ID = 'my-ai-eaf27';
-const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
-
-function toFS(val) {
-  if (val === null || val === undefined) return { nullValue: null };
-  if (typeof val === 'string') return { stringValue: val };
-  if (typeof val === 'number') return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
-  if (typeof val === 'boolean') return { booleanValue: val };
-  if (Array.isArray(val)) return { arrayValue: { values: val.map(toFS) } };
-  if (typeof val === 'object') {
-    const fields = {};
-    for (const k in val) fields[k] = toFS(val[k]);
-    return { mapValue: { fields } };
+function todayStr() {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Africa/Addis_Ababa",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch (e) {
+    return new Date().toISOString().slice(0, 10);
   }
-  return { stringValue: String(val) };
 }
 
-function fromFS(v) {
-  if (!v) return null;
-  if ('stringValue' in v) return v.stringValue;
-  if ('integerValue' in v) return parseInt(v.integerValue, 10);
-  if ('doubleValue' in v) return v.doubleValue;
-  if ('booleanValue' in v) return v.booleanValue;
-  if ('nullValue' in v) return null;
-  if ('arrayValue' in v) return (v.arrayValue.values || []).map(fromFS);
-  if ('mapValue' in v) {
-    const o = {};
-    for (const k in (v.mapValue.fields || {})) o[k] = fromFS(v.mapValue.fields[k]);
-    return o;
+async function fetchWithTimeout(url, options, ms) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, Object.assign({}, options || {}, { signal: ctrl.signal }));
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// ═══════════════ TELEGRAM ═══════════════
+async function tg(method, params, attempt) {
+  if (!TG_BASE) throw new Error("BUSINESS_BOT_TOKEN missing");
+  const r = await fetchWithTimeout(
+    TG_BASE + "/" + method,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(params || {}) },
+    15000
+  );
+  const data = await r.json().catch(() => null);
+  if (data && data.ok === false && data.error_code === 429 && !attempt) {
+    const waitMs = Math.min(((data.parameters && data.parameters.retry_after) || 2) * 1000, 10000);
+    console.error("[Anu] Telegram 429 on " + method + ", retrying after " + waitMs + "ms");
+    await sleep(waitMs);
+    return tg(method, params, 1);
+  }
+  if (!data || data.ok !== true) {
+    console.error("[Anu] Telegram " + method + " failed: " + JSON.stringify(data).slice(0, 500));
+  }
+  return data;
+}
+
+async function sendWithTyping(chatId, htmlText, opts) {
+  const o = opts || {};
+  const delay = Math.max(5000, Math.min(String(htmlText).length * 30, 9000));
+  const actionParams = { chat_id: chatId, action: "typing" };
+  if (o.bizConnId) actionParams.business_connection_id = o.bizConnId;
+  try { await tg("sendChatAction", actionParams); } catch (e) { console.error("[Anu] sendChatAction error", e && e.message); }
+  await sleep(Math.floor(delay / 2));
+  try { await tg("sendChatAction", actionParams); } catch (e) { /* refresh best-effort */ }
+  await sleep(Math.ceil(delay / 2));
+  const params = { chat_id: chatId, text: htmlText, parse_mode: "HTML" };
+  if (o.bizConnId) params.business_connection_id = o.bizConnId;
+  if (o.replyTo) params.reply_to_message_id = o.replyTo;
+  const sent = await tg("sendMessage", params);
+  if (!sent || sent.ok !== true) throw new Error("sendMessage failed");
+  return sent;
+}
+
+async function sendCustomerMessage(chatId, text, opts) {
+  await sendWithTyping(chatId, esc(text), opts || {});
+}
+
+async function sendAdmin(html) {
+  if (!OWNER_CHAT_ID) { console.error("[Anu] OWNER_CHAT_ID missing, cannot send admin msg"); return; }
+  await tg("sendMessage", { chat_id: OWNER_CHAT_ID, text: html, parse_mode: "HTML" });
+}
+
+async function notifyOwner(info) {
+  const ref = "REF:" + info.chatId + ":" + (info.bizConnId || "direct");
+  const msg =
+    "📩 <b>Message</b> from <b>" + esc(info.firstName) + "</b> (DM)\n" +
+    "🆔 <b>Chat:</b> <code>" + esc(String(info.chatId)) + "</code>\n\n" +
+    "💬 <b>Message:</b>\n<i>&quot;" + esc(String(info.text).slice(0, 1000)) + "&quot;</i>\n\n" +
+    "🤖 <b>anu bot replied:</b>\n<i>&quot;" + esc(String(info.reply).slice(0, 300)) + "&quot;</i>\n\n" +
+    "━━━━━━━━━━━━━━━━━━\n" +
+    "↩️ <b>Reply to this message</b>\n" +
+    "📎 Or: <code>/send " + esc(String(info.chatId)) + " &lt;message&gt;</code>\n\n" +
+    "<code>" + esc(ref) + "</code>";
+  await tg("sendMessage", { chat_id: OWNER_CHAT_ID, text: msg, parse_mode: "HTML" });
+}
+
+// ═══════════════ FIRESTORE REST ═══════════════
+function encVal(v) {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === "string") return { stringValue: v };
+  if (typeof v === "number") return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  if (typeof v === "boolean") return { booleanValue: v };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(encVal) } };
+  if (typeof v === "object") {
+    const fields = {};
+    for (const k of Object.keys(v)) fields[k] = encVal(v[k]);
+    return { mapValue: { fields } };
+  }
+  return { stringValue: String(v) };
+}
+
+function decVal(fv) {
+  if (!fv || typeof fv !== "object") return null;
+  if ("stringValue" in fv) return fv.stringValue;
+  if ("integerValue" in fv) return parseInt(fv.integerValue, 10);
+  if ("doubleValue" in fv) return fv.doubleValue;
+  if ("booleanValue" in fv) return fv.booleanValue;
+  if ("nullValue" in fv) return null;
+  if ("arrayValue" in fv) return ((fv.arrayValue && fv.arrayValue.values) || []).map(decVal);
+  if ("mapValue" in fv) {
+    const out = {};
+    const fields = (fv.mapValue && fv.mapValue.fields) || {};
+    for (const k of Object.keys(fields)) out[k] = decVal(fields[k]);
+    return out;
   }
   return null;
 }
 
-function fromFSDoc(doc) {
-  if (!doc || !doc.fields) return null;
-  const o = {};
-  for (const k in doc.fields) o[k] = fromFS(doc.fields[k]);
-  return o;
-}
-
-async function fsGet(col, id) {
+async function fsGet(col, docId) {
+  const url = FS_BASE + "/" + col + "/" + encodeURIComponent(String(docId));
+  let r;
   try {
-    const r = await fetch(`${FIRESTORE_BASE}/${col}/${encodeURIComponent(id)}`);
-    if (!r.ok) return null;
-    return fromFSDoc(await r.json());
-  } catch (e) { return null; }
-}
-
-async function fsSet(col, id, data) {
-  try {
-    const fields = {};
-    for (const k in data) fields[k] = toFS(data[k]);
-    const mask = Object.keys(data).map(k => `updateMask.fieldPaths=${k}`).join('&');
-    const r = await fetch(`${FIRESTORE_BASE}/${col}/${encodeURIComponent(id)}?${mask}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields })
-    });
-    return r.ok;
-  } catch (e) { return false; }
-}
-
-async function fsDelete(col, id) {
-  try {
-    const r = await fetch(`${FIRESTORE_BASE}/${col}/${encodeURIComponent(id)}`, { method: 'DELETE' });
-    return r.ok;
-  } catch (e) { return false; }
-}
-
-async function fsList(col, limit = 100) {
-  try {
-    const r = await fetch(`${FIRESTORE_BASE}/${col}?pageSize=${limit}`);
-    if (!r.ok) return [];
-    const data = await r.json();
-    return (data.documents || []).map(d => ({
-      id: d.name.split('/').pop(),
-      ...fromFSDoc(d)
-    }));
-  } catch (e) { return []; }
-}
-
-/* ═══════════════════════════════════════════════════════════
-   HELPERS
-   ═══════════════════════════════════════════════════════════ */
-function todayKey() { return new Date().toISOString().split('T')[0]; }
-
-function esc(s) {
-  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function daysBetween(d1, d2) {
-  return Math.ceil((d2 - d1) / (1000 * 60 * 60 * 24));
-}
-
-/* ═══════════════════════════════════════════════════════════
-   CLIENT MANAGEMENT
-   ═══════════════════════════════════════════════════════════ */
-async function getClient(chatId) {
-  return await fsGet('bot_clients', String(chatId));
-}
-
-async function getIntake(chatId) {
-  return await fsGet('bot_intake', String(chatId));
-}
-
-async function getAdminConfig() {
-  const data = await fsGet('bot_admin', 'config');
-  return data || {
-    trialDays: 14,
-    setupFee: 2000,
-    starterPrice: 500,
-    proPrice: 1500,
-    businessPrice: 3500
-  };
-}
-
-async function getPaused(chatId) {
-  const data = await fsGet('bot_client_state', String(chatId));
-  return !!(data && data.paused === true);
-}
-
-async function setPaused(chatId, v) {
-  await fsSet('bot_client_state', String(chatId), { paused: v, updatedAt: Date.now() });
-}
-
-/* ═══════════════════════════════════════════════════════════
-   AI CALL
-   ═══════════════════════════════════════════════════════════ */
-async function callAI(messages, opts = {}) {
-  const timeout = opts.timeoutMs || 20000;
-  const controller = new AbortController();
-  const tId = setTimeout(() => controller.abort(), timeout);
-
-  try {
-    // Try Gemini first
-    let r;
-    if (process.env.GEMINI_API_KEY) {
-      r = await fetch(GEMINI_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: MODELS.gemini,
-          messages,
-          temperature: opts.temperature ?? 0.8,
-          max_tokens: opts.maxTokens || 500
-        }),
-        signal: controller.signal
-      });
-    }
-
-    // Fallback to Groq
-    if (!r || !r.ok) {
-      r = await fetch(GROQ_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: MODELS.groq,
-          messages,
-          temperature: opts.temperature ?? 0.8,
-          max_tokens: opts.maxTokens || 500
-        }),
-        signal: controller.signal
-      });
-    }
-
-    clearTimeout(tId);
-    if (!r.ok) return { ok: false, error: `HTTP ${r.status}` };
-
-    const data = await r.json();
-    let content = data.choices?.[0]?.message?.content?.trim() || '';
-    if (!content) return { ok: false, error: 'Empty' };
-
-    content = content
-      .replace(/ thinking[\s\S]*?<\/think>/gi, '')
-      .replace(/^(final|reply|answer):\s*/i, '')
-      .replace(/^["']|["']$/g, '')
-      .trim();
-
-    return { ok: true, content };
+    r = await fetchWithTimeout(url, { method: "GET" }, 10000);
   } catch (e) {
-    clearTimeout(tId);
-    return { ok: false, error: e.name === 'AbortError' ? 'Timeout' : e.message };
+    console.error("[Anu] fsGet network error " + col, e && e.message ? e.message : e);
+    throw e;
   }
-}
-
-/* ═══════════════════════════════════════════════════════════
-   CLIENT-AWARE SYSTEM PROMPT
-   ═══════════════════════════════════════════════════════════ */
-function buildClientPrompt(client, senderName, memory) {
-  const business = client.businessName || 'business';
-  const owner = client.name || 'the owner';
-  const type = client.businessType || 'general';
-  const custom = client.customPrompt || '';
-  const language = client.language || 'both';
-  const tone = client.tone || 'friendly';
-
-  const memLine = memory && memory.length > 0
-    ? `\n\nCONVERSATION HISTORY (last ${Math.min(memory.length, 8)} messages):\n${memory.slice(-8).map(m => `${m.role === 'user' ? 'User' : 'Anu'}: ${m.content}`).join('\n')}`
-    : '';
-
-  return `You are **Anu** — the personal AI assistant for **${owner}** at **${business}** (${type} business in Ethiopia).
-
-═══════════════════════════════════════════
-🎯 YOUR IDENTITY
-═══════════════════════════════════════════
-- Your name: **Anu**
-- You work for **${owner}** at **${business}**
-- Created by: **Anany's**
-- If asked "who are you?" → "I'm Anu, ${owner}'s AI assistant at ${business}"
-- If asked "who created you?" → "Created by Anany's"
-
-═══════════════════════════════════════════
-🌍 LANGUAGE
-═══════════════════════════════════════════
-You understand and reply in:
-- Amharic (Ge'ez: ሰላም)
-- Amharic-in-Latin (selam, wendme, endet neh, min adregnalh)
-- English
-- Mixed
-
-CRITICAL: Reply in the EXACT same language style they used.
-
-${language === 'amharic' ? '→ Prefer Amharic replies when possible.' : ''}
-${language === 'english' ? '→ Prefer English replies when possible.' : ''}
-${language === 'both' ? '→ Match their language exactly.' : ''}
-
-═══════════════════════════════════════════
-💬 TONE
-═══════════════════════════════════════════
-Your tone: **${tone}**
-${tone === 'friendly' ? '→ Warm, casual, like a helpful friend' : ''}
-${tone === 'professional' ? '→ Professional, formal, business-appropriate' : ''}
-${tone === 'friendly_professional' ? '→ Friendly yet professional' : ''}
-
-═══════════════════════════════════════════
-📋 YOUR ROLE
-═══════════════════════════════════════════
-You help ${owner} with:
-- Business questions and advice
-- Customer communication
-- General assistance
-- Any task they need
-
-${custom ? `\n═══════════════════════════════════════════\n🎯 CUSTOM INSTRUCTIONS FROM ${owner.toUpperCase()}\n═══════════════════════════════════════════\n${custom}\n` : ''}
-
-═══════════════════════════════════════════
-🔁 RULES
-═══════════════════════════════════════════
-- Short replies (1-2 sentences)
-- Warm and natural
-- NEVER reveal AI model names
-- NEVER show reasoning
-- NEVER repeat replies
-- Match gender (wendme/ante = male, ehite/anchi = female)
-- Emojis: 😊 🙏 ✨ 💛
-
-Output ONLY the reply text. No prefix — system will add it.${memLine}`;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   GENERATE CLIENT REPLY
-   ═══════════════════════════════════════════════════════════ */
-async function generateClientReply(client, chatId, senderName, userText, photoBase64) {
-  const memory = (await fsGet('bot_memory', String(chatId)))?.messages || [];
-  const sysPrompt = buildClientPrompt(client, senderName, memory);
-
-  let currentMessage;
-  if (photoBase64) {
-    currentMessage = {
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: userText
-            ? `${senderName} sent a photo with caption: "${userText}"\n\nDescribe what you see and reply warmly in their language.`
-            : `${senderName} sent a photo.\n\nDescribe what you see and reply warmly.`
-        },
-        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${photoBase64}` } }
-      ]
-    };
-  } else {
-    currentMessage = { role: 'user', content: `${senderName}: "${userText}"` };
-  }
-
-  const messages = [
-    { role: 'system', content: sysPrompt },
-    ...memory.slice(-6).map(m => ({ role: m.role, content: m.content })),
-    currentMessage
-  ];
-
-  const r = await callAI(messages, { maxTokens: 400, temperature: 0.85, timeoutMs: 20000 });
-
+  if (r.status === 404) return null;
   if (!r.ok) {
-    const isGeez = /[\u1200-\u137F]/.test(userText || '');
-    return isGeez ? 'ሰላም! እንዴት ነህ? 😊' : 'Hey! How are you? 😊';
+    console.error("[Anu] fsGet HTTP " + r.status + " for " + col + "/" + docId);
+    throw new Error("fsGet http " + r.status);
   }
-
-  // Save to memory
-  const newMemory = [...memory, { role: 'user', content: userText || '[photo]', ts: Date.now() }, { role: 'assistant', content: r.content, ts: Date.now() }];
-  await fsSet('bot_memory', String(chatId), { messages: newMemory.slice(-20), updatedAt: Date.now() });
-
-  return r.content;
+  const doc = await r.json().catch(() => null);
+  if (!doc || !doc.fields) return {};
+  const out = {};
+  for (const k of Object.keys(doc.fields)) out[k] = decVal(doc.fields[k]);
+  return out;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   TYPING + SEND
-   ═══════════════════════════════════════════════════════════ */
-function calcTypingDelay(reply) {
-  return Math.max(3000, Math.min((reply || '').length * 25, 8000));
-}
-
-async function sendWithTyping(tg, payload, replyText, bizConnId) {
-  const delay = calcTypingDelay(replyText);
-  const tp = { chat_id: payload.chat_id, action: 'typing' };
-  if (bizConnId) tp.business_connection_id = bizConnId;
-
-  await tg('sendChatAction', tp).catch(() => {});
-  setTimeout(() => tg('sendChatAction', tp).catch(() => {}), Math.floor(delay / 2));
-  await new Promise(r => setTimeout(r, delay));
-  return tg('sendMessage', payload);
-}
-
-/* ═══════════════════════════════════════════════════════════
-   STATUS CHECK
-   ═══════════════════════════════════════════════════════════ */
-async function checkClientStatus(client) {
-  const now = Date.now();
-  const adminConfig = await getAdminConfig();
-  const trialDays = adminConfig.trialDays || 14;
-
-  // Check trial expiry
-  if (client.status === 'trial' && client.trialEnd && now > client.trialEnd) {
-    await fsSet('bot_clients', client.id, { status: 'expired' });
-    return 'expired';
-  }
-
-  // Check paid expiry
-  if (client.status === 'active' && client.paidUntil && now > client.paidUntil) {
-    await fsSet('bot_clients', client.id, { status: 'expired' });
-    return 'expired';
-  }
-
-  // Check message limit
-  if (client.messagesUsed >= (client.messagesLimit || PLANS[client.plan]?.limit || 500)) {
-    return 'limit_reached';
-  }
-
-  return client.status || 'trial';
-}
-
-async function incrementUsage(chatId) {
-  const client = await getClient(chatId);
-  if (!client) return;
-  await fsSet('bot_clients', String(chatId), {
-    messagesUsed: (client.messagesUsed || 0) + 1,
-    lastUsedAt: Date.now()
-  });
-  await fsSet('bot_analytics', todayKey(), {
-    messages: ((await fsGet('bot_analytics', todayKey()))?.messages || 0) + 1,
-    lastUpdate: Date.now()
-  });
-}
-
-/* ═══════════════════════════════════════════════════════════
-   ADMIN COMMANDS
-   ═══════════════════════════════════════════════════════════ */
-async function handleAdminCommand(tg, chatId, txt, BOT_TOKEN) {
-  const parts = txt.trim().split(/\s+/);
-  const cmd = parts[0].toLowerCase();
-  const arg1 = parts[1];
-  const arg2 = parts[2];
-  const rest = parts.slice(1).join(' ');
-
-  const send = (text, opts = {}) => tg('sendMessage', {
-    chat_id: chatId,
-    text,
-    parse_mode: 'HTML',
-    ...opts
-  });
-
-  switch (cmd) {
-    case '/start':
-    case '/admin': {
-      const adminConfig = await getAdminConfig();
-      const clients = await fsList('bot_clients');
-      const intake = await fsList('bot_intake');
-      const pending = intake.filter(i => i.status === 'pending');
-      const active = clients.filter(c => c.status === 'active' || c.status === 'trial');
-      const paid = clients.filter(c => c.status === 'active');
-
-      await send(
-        `👑 <b>Anu Admin Panel v23.0</b>\n\n` +
-        `<b>━━━ OVERVIEW ━━━</b>\n` +
-        `👥 Total Clients: <b>${clients.length}</b>\n` +
-        `🟢 Active/Trial: <b>${active.length}</b>\n` +
-        `💰 Paid: <b>${paid.length}</b>\n` +
-        `📋 Pending: <b>${pending.length}</b>\n` +
-        `🎁 Trial Days: <b>${adminConfig.trialDays || 14}</b>\n\n` +
-        `<b>━━━ COMMANDS ━━━</b>\n` +
-        `<b>📊 Info</b>\n` +
-        `<code>/stats</code> — Full statistics\n` +
-        `<code>/pending</code> — Pending approvals\n` +
-        `<code>/clients</code> — All clients\n` +
-        `<code>/client &lt;id&gt;</code> — Client details\n\n` +
-        `<b>✅ Approval</b>\n` +
-        `<code>/approve &lt;id&gt; [plan]</code>\n` +
-        `<code>/reject &lt;id&gt;</code>\n\n` +
-        `<b>⚙️ Control</b>\n` +
-        `<code>/pause &lt;id&gt;</code> — Pause client\n` +
-        `<code>/resume &lt;id&gt;</code> — Resume\n` +
-        `<code>/extend &lt;id&gt; &lt;days&gt;</code> — Extend\n` +
-        `<code>/plan &lt;id&gt; &lt;plan&gt;</code> — Change plan\n` +
-        `<code>/reset &lt;id&gt;</code> — Reset usage\n` +
-        `<code>/delete &lt;id&gt;</code> — Delete client\n\n` +
-        `<b>🎛️ Settings</b>\n` +
-        `<code>/trial &lt;days&gt;</code> — Trial duration\n` +
-        `<code>/broadcast &lt;msg&gt;</code> — Message all\n` +
-        `<code>/webapp</code> — Open admin panel`
-      );
-      return;
-    }
-
-    case '/stats': {
-      const clients = await fsList('bot_clients');
-      const today = await fsGet('bot_analytics', todayKey()) || {};
-      const adminConfig = await getAdminConfig();
-
-      const byPlan = { free: 0, starter: 0, pro: 0, business: 0 };
-      const byStatus = { trial: 0, active: 0, paused: 0, expired: 0 };
-
-      let monthlyRevenue = 0;
-      clients.forEach(c => {
-        byPlan[c.plan] = (byPlan[c.plan] || 0) + 1;
-        byStatus[c.status] = (byStatus[c.status] || 0) + 1;
-        if (c.status === 'active') {
-          if (c.plan === 'starter') monthlyRevenue += adminConfig.starterPrice || 500;
-          if (c.plan === 'pro') monthlyRevenue += adminConfig.proPrice || 1500;
-          if (c.plan === 'business') monthlyRevenue += adminConfig.businessPrice || 3500;
-        }
-      });
-
-      await send(
-        `📊 <b>Statistics</b>\n\n` +
-        `<b>━━━ REVENUE ━━━</b>\n` +
-        `💰 Monthly: <b>${monthlyRevenue.toLocaleString()} ብር</b>\n` +
-        `📈 Yearly: <b>${(monthlyRevenue * 12).toLocaleString()} ብር</b>\n\n` +
-        `<b>━━━ CLIENTS ━━━</b>\n` +
-        `🆓 Free: ${byPlan.free}\n` +
-        `🥉 Starter: ${byPlan.starter}\n` +
-        `🥈 Pro: ${byPlan.pro}\n` +
-        `🥇 Business: ${byPlan.business}\n\n` +
-        `<b>━━━ STATUS ━━━</b>\n` +
-        `🎁 Trial: ${byStatus.trial}\n` +
-        `🟢 Active: ${byStatus.active}\n` +
-        `⏸️ Paused: ${byStatus.paused}\n` +
-        `❌ Expired: ${byStatus.expired}\n\n` +
-        `<b>━━━ TODAY ━━━</b>\n` +
-        `💬 Messages: <b>${today.messages || 0}</b>`
-      );
-      return;
-    }
-
-    case '/pending': {
-      const intake = await fsList('bot_intake');
-      const pending = intake.filter(i => i.status === 'pending');
-
-      if (!pending.length) {
-        await send('✅ No pending registrations.');
-        return;
-      }
-
-      let msg = `📋 <b>Pending (${pending.length})</b>\n\n`;
-      pending.slice(0, 10).forEach((p, i) => {
-        msg += `<b>${i + 1}.</b> ${esc(p.name || 'Unknown')}\n`;
-        msg += `   🆔 <code>${p.id}</code>\n`;
-        msg += `   📱 ${esc(p.phone || '-')}\n`;
-        msg += `   🏢 ${esc(p.businessName || '-')}\n`;
-        msg += `   📅 ${new Date(p.createdAt).toLocaleDateString()}\n\n`;
-      });
-      msg += `\nUse: <code>/approve &lt;id&gt;</code> or <code>/reject &lt;id&gt;</code>`;
-      await send(msg);
-      return;
-    }
-
-    case '/clients': {
-      const clients = await fsList('bot_clients');
-      if (!clients.length) {
-        await send('No clients yet.');
-        return;
-      }
-
-      let msg = `👥 <b>Clients (${clients.length})</b>\n\n`;
-      clients.slice(0, 20).forEach((c, i) => {
-        const icon = c.status === 'active' ? '🟢' : c.status === 'trial' ? '🎁' : c.status === 'paused' ? '⏸️' : '❌';
-        msg += `${icon} <b>${esc(c.name || 'Unknown')}</b>\n`;
-        msg += `   🆔 <code>${c.id}</code>\n`;
-        msg += `   🏢 ${esc(c.businessName || '-')}\n`;
-        msg += `   📊 ${c.plan || 'free'} · ${c.messagesUsed || 0}/${c.messagesLimit || 500}\n\n`;
-      });
-      if (clients.length > 20) msg += `\n... and ${clients.length - 20} more`;
-      await send(msg);
-      return;
-    }
-
-    case '/client': {
-      if (!arg1) {
-        await send('Usage: <code>/client &lt;chat_id&gt;</code>');
-        return;
-      }
-      const c = await getClient(arg1);
-      if (!c) {
-        await send('❌ Client not found.');
-        return;
-      }
-      const days = c.trialEnd ? daysBetween(Date.now(), c.trialEnd) : null;
-      const paidDays = c.paidUntil ? daysBetween(Date.now(), c.paidUntil) : null;
-
-      await send(
-        `👤 <b>${esc(c.name)}</b>\n` +
-        `🆔 <code>${c.id}</code>\n\n` +
-        `<b>━━━ BUSINESS ━━━</b>\n` +
-        `🏢 ${esc(c.businessName || '-')}\n` +
-        `📂 ${esc(c.businessType || '-')}\n` +
-        `📱 ${esc(c.phone || '-')}\n` +
-        `📧 ${esc(c.email || '-')}\n\n` +
-        `<b>━━━ STATUS ━━━</b>\n` +
-        `📊 Plan: <b>${c.plan || 'free'}</b>\n` +
-        `🚦 Status: <b>${c.status || 'trial'}</b>\n` +
-        `💬 Usage: <b>${c.messagesUsed || 0} / ${c.messagesLimit || 500}</b>\n` +
-        (days !== null ? `🎁 Trial: ${days > 0 ? days + ' days left' : 'Expired'}\n` : '') +
-        (paidDays !== null ? `💰 Paid: ${paidDays > 0 ? paidDays + ' days left' : 'Expired'}\n` : '') +
-        `📅 Created: ${new Date(c.createdAt).toLocaleDateString()}\n\n` +
-        `<b>━━━ ACTIONS ━━━</b>\n` +
-        `<code>/pause ${c.id}</code>\n` +
-        `<code>/resume ${c.id}</code>\n` +
-        `<code>/extend ${c.id} 30</code>\n` +
-        `<code>/plan ${c.id} pro</code>\n` +
-        `<code>/reset ${c.id}</code>\n` +
-        `<code>/delete ${c.id}</code>`
-      );
-      return;
-    }
-
-    case '/approve': {
-      if (!arg1) {
-        await send('Usage: <code>/approve &lt;chat_id&gt; [plan]</code>');
-        return;
-      }
-      const plan = arg2 || 'free';
-      const intake = await getIntake(arg1);
-      if (!intake) {
-        await send('❌ Registration not found.');
-        return;
-      }
-
-      const adminConfig = await getAdminConfig();
-      const trialDays = adminConfig.trialDays || 14;
-      const planConfig = PLANS[plan] || PLANS.free;
-
-      await fsSet('bot_clients', arg1, {
-        ...intake,
-        plan,
-        status: plan === 'free' ? 'trial' : 'active',
-        messagesUsed: 0,
-        messagesLimit: planConfig.limit,
-        trialStart: Date.now(),
-        trialEnd: Date.now() + (trialDays * 24 * 60 * 60 * 1000),
-        paidUntil: plan === 'free' ? null : Date.now() + (planConfig.days * 24 * 60 * 60 * 1000),
-        approvedAt: Date.now()
-      });
-
-      await fsSet('bot_intake', arg1, { status: 'approved' });
-
-      await send(
-        `✅ <b>Approved!</b>\n\n` +
-        `👤 ${esc(intake.name)}\n` +
-        `📊 Plan: ${plan}\n` +
-        `🎁 Trial: ${trialDays} days\n` +
-        `💬 Limit: ${planConfig.limit} msgs`
-      );
-
-      // Notify client
-      try {
-        await tg('sendMessage', {
-          chat_id: arg1,
-          text:
-            `🎉 <b>Welcome to Anu AI!</b>\n\n` +
-            `Your account has been activated ✅\n\n` +
-            `📊 Plan: <b>${planConfig.name}</b>\n` +
-            `🎁 Free for: <b>${trialDays} days</b>\n` +
-            `💬 Messages: <b>${planConfig.limit}</b>\n\n` +
-            `You can now chat with me anytime. Just send a message!\n\n` +
-            `Try: <code>ሰላም</code> or <code>Hi</code>`,
-          parse_mode: 'HTML'
-        });
-      } catch (e) {}
-      return;
-    }
-
-    case '/reject': {
-      if (!arg1) {
-        await send('Usage: <code>/reject &lt;chat_id&gt;</code>');
-        return;
-      }
-      const intake = await getIntake(arg1);
-      if (!intake) {
-        await send('❌ Registration not found.');
-        return;
-      }
-      await fsSet('bot_intake', arg1, { status: 'rejected' });
-
-      await send(`❌ Rejected ${esc(intake.name)}`);
-
-      try {
-        await tg('sendMessage', {
-          chat_id: arg1,
-          text: `❌ Sorry, your registration was not approved.\n\nFor questions, please contact support.`,
-          parse_mode: 'HTML'
-        });
-      } catch (e) {}
-      return;
-    }
-
-    case '/pause': {
-      if (!arg1) { await send('Usage: <code>/pause &lt;id&gt;</code>'); return; }
-      const c = await getClient(arg1);
-      if (!c) { await send('❌ Not found.'); return; }
-      await fsSet('bot_clients', arg1, { status: 'paused' });
-      await send(`⏸️ Paused ${esc(c.name)}`);
-      try {
-        await tg('sendMessage', { chat_id: arg1, text: '⏸️ Your account has been paused. Please contact support.' });
-      } catch (e) {}
-      return;
-    }
-
-    case '/resume': {
-      if (!arg1) { await send('Usage: <code>/resume &lt;id&gt;</code>'); return; }
-      const c = await getClient(arg1);
-      if (!c) { await send('❌ Not found.'); return; }
-      await fsSet('bot_clients', arg1, { status: c.trialEnd && c.trialEnd > Date.now() ? 'trial' : 'active' });
-      await send(`▶️ Resumed ${esc(c.name)}`);
-      try {
-        await tg('sendMessage', { chat_id: arg1, text: '▶️ Your account has been resumed. You can chat again!' });
-      } catch (e) {}
-      return;
-    }
-
-    case '/extend': {
-      if (!arg1 || !arg2) { await send('Usage: <code>/extend &lt;id&gt; &lt;days&gt;</code>'); return; }
-      const c = await getClient(arg1);
-      if (!c) { await send('❌ Not found.'); return; }
-      const days = parseInt(arg2, 10);
-      const newPaidUntil = Math.max(c.paidUntil || Date.now(), Date.now()) + (days * 24 * 60 * 60 * 1000);
-      await fsSet('bot_clients', arg1, { paidUntil: newPaidUntil, status: 'active' });
-      await send(`✅ Extended ${esc(c.name)} by ${days} days`);
-      try {
-        await tg('sendMessage', { chat_id: arg1, text: `✅ Your account extended by ${days} days! 🎉` });
-      } catch (e) {}
-      return;
-    }
-
-    case '/plan': {
-      if (!arg1 || !arg2) { await send('Usage: <code>/plan &lt;id&gt; &lt;free|starter|pro|business&gt;</code>'); return; }
-      const c = await getClient(arg1);
-      if (!c) { await send('❌ Not found.'); return; }
-      const planConfig = PLANS[arg2];
-      if (!planConfig) { await send('❌ Invalid plan. Use: free, starter, pro, business'); return; }
-      await fsSet('bot_clients', arg1, {
-        plan: arg2,
-        messagesLimit: planConfig.limit,
-        status: arg2 === 'free' ? 'trial' : 'active'
-      });
-      await send(`✅ ${esc(c.name)} → ${planConfig.name}`);
-      return;
-    }
-
-    case '/reset': {
-      if (!arg1) { await send('Usage: <code>/reset &lt;id&gt;</code>'); return; }
-      const c = await getClient(arg1);
-      if (!c) { await send('❌ Not found.'); return; }
-      await fsSet('bot_clients', arg1, { messagesUsed: 0 });
-      await send(`🔄 Reset usage for ${esc(c.name)}`);
-      return;
-    }
-
-    case '/delete': {
-      if (!arg1) { await send('Usage: <code>/delete &lt;id&gt;</code>'); return; }
-      const c = await getClient(arg1);
-      if (!c) { await send('❌ Not found.'); return; }
-      await fsDelete('bot_clients', arg1);
-      await fsDelete('bot_intake', arg1);
-      await fsDelete('bot_memory', arg1);
-      await send(`🗑️ Deleted ${esc(c.name)}`);
-      return;
-    }
-
-    case '/trial': {
-      if (!arg1) { await send('Usage: <code>/trial &lt;days&gt;</code>'); return; }
-      const days = parseInt(arg1, 10);
-      if (isNaN(days) || days < 1 || days > 365) {
-        await send('❌ Days must be 1-365');
-        return;
-      }
-      await fsSet('bot_admin', 'config', { trialDays: days });
-      await send(`✅ Trial set to ${days} days`);
-      return;
-    }
-
-    case '/broadcast': {
-      if (!rest) { await send('Usage: <code>/broadcast &lt;message&gt;</code>'); return; }
-      const clients = await fsList('bot_clients');
-      let sent = 0;
-      for (const c of clients) {
-        try {
-          await tg('sendMessage', { chat_id: c.id, text: `📢 ${rest}` });
-          sent++;
-          await new Promise(r => setTimeout(r, 100));
-        } catch (e) {}
-      }
-      await send(`✅ Sent to ${sent}/${clients.length} clients`);
-      return;
-    }
-
-    case '/webapp': {
-      const adminUrl = process.env.ANU_APP_URL || 'https://anu-ai.vercel.app';
-      await send(
-        `📱 <b>Admin Dashboard</b>\n\nOpen the full admin panel:`,
-        {
-          reply_markup: {
-            inline_keyboard: [[
-              { text: '📊 Open Admin Panel', web_app: { url: `${adminUrl}/admin` } }
-            ]]
-          }
-        }
-      );
-      return;
-    }
-
-    case '/help': {
-      await send(
-        `<b>Admin Commands</b>\n\n` +
-        `/stats — Statistics\n` +
-        `/pending — Pending approvals\n` +
-        `/clients — All clients\n` +
-        `/client &lt;id&gt; — Details\n` +
-        `/approve &lt;id&gt; [plan]\n` +
-        `/reject &lt;id&gt;\n` +
-        `/pause &lt;id&gt;\n` +
-        `/resume &lt;id&gt;\n` +
-        `/extend &lt;id&gt; &lt;days&gt;\n` +
-        `/plan &lt;id&gt; &lt;plan&gt;\n` +
-        `/reset &lt;id&gt;\n` +
-        `/delete &lt;id&gt;\n` +
-        `/trial &lt;days&gt;\n` +
-        `/broadcast &lt;msg&gt;\n` +
-        `/webapp — Admin panel`
-      );
-      return;
-    }
-
-    default: {
-      // Not a command
-      await send('Use /help for admin commands.');
-      return;
-    }
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════
-   FETCH PHOTO
-   ═══════════════════════════════════════════════════════════ */
-async function fetchPhotoBase64(botToken, fileId) {
+async function fsSet(col, docId, data) {
+  const keys = Object.keys(data || {});
+  if (!keys.length) return;
+  const mask = keys.map((k) => "updateMask.fieldPaths=" + encodeURIComponent(k)).join("&");
+  const url = FS_BASE + "/" + col + "/" + encodeURIComponent(String(docId)) + "?" + mask;
+  const fields = {};
+  for (const k of keys) fields[k] = encVal(data[k]);
+  let r;
   try {
-    const r = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`);
-    const data = await r.json();
-    if (!data.ok) return null;
-    const url = `https://api.telegram.org/file/bot${botToken}/${data.result.file_path}`;
-    const img = await fetch(url);
-    const buf = await img.arrayBuffer();
-    if (buf.byteLength > 4000000) return null;
-    return Buffer.from(buf).toString('base64');
-  } catch (e) { return null; }
+    r = await fetchWithTimeout(
+      url,
+      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) },
+      10000
+    );
+  } catch (e) {
+    console.error("[Anu] fsSet network error " + col, e && e.message ? e.message : e);
+    throw e;
+  }
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    console.error("[Anu] fsSet HTTP " + r.status + " for " + col + "/" + docId + " " + String(txt).slice(0, 300));
+    throw new Error("fsSet http " + r.status);
+  }
 }
 
-/* ═══════════════════════════════════════════════════════════
-   MAIN HANDLER
-   ═══════════════════════════════════════════════════════════ */
-export default async function handler(req, res) {
-  if (req.method === 'GET') {
-    return res.status(200).json({
-      status: 'Anu Multi-Tenant Bot v23.0',
-      type: 'SaaS',
-      plans: Object.keys(PLANS)
+async function fsDelete(col, docId) {
+  const url = FS_BASE + "/" + col + "/" + encodeURIComponent(String(docId));
+  let r;
+  try {
+    r = await fetchWithTimeout(url, { method: "DELETE" }, 10000);
+  } catch (e) {
+    console.error("[Anu] fsDelete network error " + col, e && e.message ? e.message : e);
+    throw e;
+  }
+  if (!r.ok && r.status !== 404) {
+    console.error("[Anu] fsDelete HTTP " + r.status + " for " + col + "/" + docId);
+    throw new Error("fsDelete http " + r.status);
+  }
+}
+
+// ═══════════════ LANGUAGE ═══════════════
+const GEEZ_RE = /[ሀ-፿]/;
+const LATIN_AM_RE = /(selam|salam|dehna|dena|endet|amesegn|wendme|wendmu|ehite|ante|anchi|ene|egna|min|man|yet|lemin|meche|sint|neh|nesh|negn|new|nchi|achew|yelem|alew|alech|pic new|min adregnalh|yet neberk|bet sra|exersays|agricultur|temhert|meskerem|mels|eshi|ishi|awo|ay|aznalew|yikir|chat|gibity|gedel|guday|sira|sra|bet|genzeb|neber|honk|metah|hed|na|kolo|mana|nega|arat|ekul|and|hulet|sost)/i;
+
+function detectLanguage(text) {
+  const t = String(text || "");
+  const geezCount = (t.match(/[ሀ-፿]/g) || []).length;
+  const latinHit = LATIN_AM_RE.test(t);
+  if (geezCount > 0 && latinHit) return geezCount >= 3 ? "geez" : "latin";
+  if (geezCount > 0) return "geez";
+  if (latinHit) return "latin";
+  return "english";
+}
+
+function detectGender(text) {
+  const t = String(text || "");
+  if (/(ehite|anchi|\bnesh\b)/i.test(t)) return "female";
+  if (/(wendme|\bante\b|\bneh\b)/i.test(t)) return "male";
+  return null;
+}
+
+function isComplex(t) {
+  const s = String(t || "");
+  if (s.length >= 100) return true;
+  if (s.indexOf("?") !== -1) return true;
+  return /(explain|analy[sz]e|write|how does|why does|solve|calculate|translate|summari[sz]e|describe)/i.test(s);
+}
+
+function isJustGreeting(s) {
+  return /^(hi|hello|hey|selam|salam|ሰላም|dehna|eshi|ishi|awo)[\s!.,?…،؛]*$/i.test(String(s || "").trim());
+}
+
+function repeatCount(history, text) {
+  const t = String(text || "").trim();
+  if (!t) return 0;
+  let n = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (!m || m.role !== "user") continue;
+    if (String(m.content || "").trim() === t) n++;
+    else break;
+  }
+  return n;
+}
+
+function fallbackFor(lang) {
+  if (lang === "geez") return "ይቅርታ፣ አሁን መልስ መስጠት አልቻልኩም። እባክዎ እንደገና ይሞክሩ። 🙏";
+  if (lang === "latin") return "Yiqirta, ahun meles mes-tet alchalkum. Ebakwo endegena yimokiru. 🙏";
+  return "Sorry, I could not reply right now. Please try again. 🙏";
+}
+
+function rateLimitMsg(lang) {
+  if (lang === "geez") return "እባክዎ ትንሽ ዝግ ይበሉ። እንደገና ይሞክሩ። 🙏";
+  if (lang === "latin") return "Ebakwo tinish zig yibelu. Endegena yimokiru. 🙏";
+  return "Please slow down a bit and try again. 🙏";
+}
+
+// ═══════════════ AI PROVIDERS ═══════════════
+async function postAI(url, key, body, ms, tag) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    const data = await r.json().catch(() => null);
+    if (!r.ok) {
+      console.error("[Anu] " + tag + " HTTP " + r.status + ": " + JSON.stringify(data).slice(0, 500));
+      throw new Error(tag + " http " + r.status);
+    }
+    return data;
+  } catch (e) {
+    if (e && e.name === "AbortError") console.error("[Anu] " + tag + " timeout after " + ms + "ms");
+    else console.error("[Anu] " + tag + " error: " + (e && e.message ? e.message : e));
+    throw e;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function extractChoiceText(data) {
+  const c =
+    data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+  return typeof c === "string" && c.trim() ? c.trim() : null;
+}
+
+async function geminiChat(system, history, userText, timeoutMs) {
+  if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY missing");
+  const messages = [{ role: "system", content: system }];
+  for (const h of history || []) {
+    messages.push({
+      role: h.role === "assistant" ? "assistant" : "user",
+      content: String(h.content || "").slice(0, 2000),
     });
   }
-  if (req.method !== 'POST') return res.status(405).send('Method not allowed');
+  messages.push({ role: "user", content: String(userText) });
+  const data = await postAI(
+    "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    GEMINI_API_KEY,
+    { model: GEMINI_MODEL, messages },
+    timeoutMs || AI_TIMEOUT_MS,
+    "Gemini"
+  );
+  return extractChoiceText(data);
+}
 
-  const BOT_TOKEN = process.env.BUSINESS_BOT_TOKEN;
-  const OWNER_CHAT_ID = process.env.OWNER_CHAT_ID;
-  const APP_URL = process.env.ANU_APP_URL || 'https://anu-ai.vercel.app';
-
-  if (!BOT_TOKEN || (!process.env.GROQ_API_KEY && !process.env.GEMINI_API_KEY)) {
-    return res.status(200).end();
+async function groqChat(system, history, userText, timeoutMs) {
+  if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY missing");
+  const messages = [{ role: "system", content: system }];
+  for (const h of history || []) {
+    messages.push({
+      role: h.role === "assistant" ? "assistant" : "user",
+      content: String(h.content || "").slice(0, 2000),
+    });
   }
+  messages.push({ role: "user", content: String(userText) });
+  const data = await postAI(
+    "https://api.groq.com/openai/v1/chat/completions",
+    GROQ_API_KEY,
+    { model: GROQ_MODEL, messages },
+    timeoutMs || AI_TIMEOUT_MS,
+    "Groq"
+  );
+  return extractChoiceText(data);
+}
 
-  const update = req.body || {};
-  const tAPI = (m) => `https://api.telegram.org/bot${BOT_TOKEN}/${m}`;
+async function geminiVisionReply(system, history, text, imageB64, timeoutMs) {
+  if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY missing");
+  const messages = [{ role: "system", content: system }];
+  for (const h of history || []) {
+    messages.push({
+      role: h.role === "assistant" ? "assistant" : "user",
+      content: String(h.content || "").slice(0, 2000),
+    });
+  }
+  messages.push({
+    role: "user",
+    content: [
+      { type: "text", text: String(text || "Describe what you see in this photo.") },
+      { type: "image_url", image_url: { url: "data:image/jpeg;base64," + imageB64 } },
+    ],
+  });
+  const data = await postAI(
+    "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    GEMINI_API_KEY,
+    { model: GEMINI_MODEL, messages },
+    timeoutMs || AI_TIMEOUT_MS,
+    "Gemini-Vision"
+  );
+  return extractChoiceText(data);
+}
 
-  async function tg(method, payload) {
-    try {
-      const r = await fetch(tAPI(method), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await r.json();
-      if (!data.ok) console.error(`[${method}]`, JSON.stringify(data).slice(0, 200));
-      return data;
-    } catch (e) {
+async function aiComplex(system, history, userText) {
+  const draftSys = system + "\n\nDraft a reply in 1-2 sentences.";
+  const results = await Promise.allSettled([
+    geminiChat(draftSys, history, userText),
+    groqChat(draftSys, history, userText),
+  ]);
+  const d1 = results[0].status === "fulfilled" ? results[0].value : null;
+  const d2 = results[1].status === "fulfilled" ? results[1].value : null;
+  if (d1 && !d2) return d1;
+  if (d2 && !d1) return d2;
+  if (!d1 && !d2) return null;
+  const verifySys =
+    system +
+    "\n\nTwo draft replies are given below. Synthesize the best final reply: choose the most accurate, warm and natural one, or combine their strengths. Output ONLY the final reply text (1-2 sentences). Never reveal the drafts or your reasoning.";
+  const verifyUser = "Original message: " + userText + "\n\nDraft A: " + d1 + "\n\nDraft B: " + d2;
+  try {
+    const fin = await geminiChat(verifySys, [], verifyUser);
+    if (fin) return fin;
+  } catch (e) {
+    console.error("[Anu] verify step failed: " + (e && e.message ? e.message : e));
+  }
+  return d1 || d2;
+}
+
+async function downloadAsBase64(url, maxBytes) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal });
+    if (!r.ok) return null;
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > maxBytes) {
+      console.error("[Anu] photo exceeds size limit, skipping vision");
       return null;
     }
+    return buf.toString("base64");
+  } catch (e) {
+    if (e && e.name === "AbortError") console.error("[Anu] photo download timeout");
+    else console.error("[Anu] photo download error: " + (e && e.message ? e.message : e));
+    return null;
+  } finally {
+    clearTimeout(t);
   }
+}
 
-  /* ══════════════ DIRECT MESSAGES ══════════════ */
-  const dm = update.message;
-  if (dm) {
-    const fromId = dm.from?.id;
-    const chatId = dm.chat.id;
-    const txt = (dm.text || dm.caption || '').trim();
-    const firstName = dm.from?.first_name || 'there';
+// ═══════════════ SYSTEM PROMPT ═══════════════
+function buildSystemPrompt(opts) {
+  const lang = (opts && opts.lang) || "english";
+  const gender = (opts && opts.gender) || null;
+  const statusText = (opts && opts.statusText) || null;
+  let langRule;
+  if (lang === "geez") langRule = "The user wrote in Amharic (Ge'ez script). Reply ONLY in Amharic Ge'ez script.";
+  else if (lang === "latin")
+    langRule = 'The user wrote in Latin-script Amharic (Amharic written with English letters, e.g. "selam wendme"). Reply ONLY in the same Latin-script Amharic style.';
+  else langRule = "The user wrote in English. Reply ONLY in English.";
+  let genderRule = "";
+  if (gender === "male") genderRule = ' The user is male: use masculine forms (e.g. "ነህ", "endet neh").';
+  else if (gender === "female") genderRule = ' The user is female: use feminine forms (e.g. "ነሽ", "endet nesh").';
+  const statusBlock = statusText
+    ? "\n\n📢 TODAY'S STATUS FROM ANANYA: \"" + String(statusText).slice(0, 500) + "\"\nIf asked about Ananya, mention this naturally."
+    : "";
+  return (
+    "You are Anu — the personal AI assistant of Ananya, an Ethiopian man.\n" +
+    "\n" +
+    "IDENTITY (never break these):\n" +
+    "- Your name is Anu. You work FOR Ananya; you are NOT Ananya.\n" +
+    "- Always speak ABOUT Ananya in third person.\n" +
+    "- Creator: Anany's.\n" +
+    '- "who are you?" → "I\'m Anu, Ananya\'s AI assistant"\n' +
+    '- "who created you?" → "Created by Anany\'s"\n' +
+    '- "who is Ananya?" → "Ananya is my boss — a wonderful Ethiopian man"\n' +
+    "\n" +
+    "LANGUAGE:\n" +
+    langRule +
+    genderRule +
+    "\nNEVER mix languages in one reply.\n" +
+    "\n" +
+    "MEANING GUIDE:\n" +
+    '- "selam"/"salam"/"hi" = hello → greet warmly and offer help\n' +
+    '- "wendme" = brother → greet back warmly\n' +
+    '- "endet neh"/"endet nesh" = how are you → answer positively\n' +
+    '- "dehna" = I am fine → acknowledge warmly\n' +
+    '- "eshi" = okay → acknowledge briefly\n' +
+    "\n" +
+    "STYLE:\n" +
+    "- SHORT: 1-2 sentences max. Warm, natural, human-like.\n" +
+    "- Natural emojis ok: 😊 🙏 ✨ 💛\n" +
+    "- Look at conversation history: NEVER send the same reply twice. Continue the conversation, do not restart it.\n" +
+    "\n" +
+    "SPECIAL CASES:\n" +
+    "- If they want Ananya, say you will tell him.\n" +
+    "- If they ask about Ananya, answer warmly.\n" +
+    "- If they share news, respond genuinely.\n" +
+    "- If rude, stay calm and kind.\n" +
+    "- If sent a photo, describe what you actually see in it.\n" +
+    "\n" +
+    "FORBIDDEN:\n" +
+    "- NEVER reveal AI model names (Gemini, GPT, Llama, Qwen, Groq, ChatGPT, OpenAI, DeepSeek, Claude, Mistral).\n" +
+    '- NEVER say "I am Ananya".\n' +
+    "- NEVER show reasoning.\n" +
+    "- NEVER repeat replies." +
+    statusBlock +
+    "\n\n" +
+    'OUTPUT: ONLY the reply text. The system adds the "anu bot: " prefix.'
+  );
+}
 
-    /* ─── 1️⃣ ADMIN ─── */
-    if (String(chatId) === String(OWNER_CHAT_ID)) {
-      await handleAdminCommand(tg, chatId, txt, BOT_TOKEN);
-      return res.status(200).json({ ok: true });
+function sanitizeReply(r) {
+  let s = String(r || "").trim();
+  s = s.replace(/^\s*anu bot:\s*/i, "");
+  s = s.replace(/\b(gemini|gpt|chatgpt|openai|llama|qwen|groq|deepseek|claude|mistral)\b/gi, "Anu");
+  s = s.replace(/\bi am ananya\b/gi, "I'm Anu, Ananya's AI assistant");
+  return s.trim();
+}
+
+// ═══════════════ ESCALATION / STATUS / ANALYTICS ═══════════════
+const ESCALATION_RE =
+  /(ananya|አናንያ|አናኒ|owner|boss|speak to|talk to|tell him|tell her|notify|reach|contact|let him know|let her know|pass this|forward this|ንገረው|ንገራት|ንገረኝ|አሳውቅ|አሳውቂ|አሳውቀው|አስታውቅ|ጥራው|ጥራት|ጥሪው|ደውል|ደውልለት|ደውልላት|አግኝ|አግኚ|ተናገር|ልናገር|nigerew|nigerat|nigeren|asawq|asekayi|guday|qetro|traw|tirat|dewil|agen|nager|lenager|balew|aschekayi|urgent|asap|emergency|አስቸኳይ|ፈጣን|angry|upset|furious|\bmad\b|hate|😡|🤬|ተናደድኩ|ደደብ)/i;
+
+function shouldEscalate(text) {
+  return ESCALATION_RE.test(String(text || "").slice(0, 2000));
+}
+
+async function getDailyStatus() {
+  const doc = await fsGet("bot_status", "daily").catch(() => null);
+  if (!doc || !doc.text || doc.date !== todayStr()) return null;
+  return doc;
+}
+
+async function bumpAnalytics(inc) {
+  try {
+    const id = todayStr();
+    const cur = (await fsGet("bot_analytics", id).catch(() => null)) || {};
+    const num = (v) => (typeof v === "number" && isFinite(v) ? v : 0);
+    await fsSet("bot_analytics", id, {
+      messages: num(cur.messages) + num(inc.messages),
+      conversations: num(cur.conversations) + num(inc.conversations),
+      photos: num(cur.photos) + num(inc.photos),
+      escalations: num(cur.escalations) + num(inc.escalations),
+      manual_replies: num(cur.manual_replies) + num(inc.manual_replies),
+      lastUpdate: Date.now(),
+    });
+  } catch (e) {
+    console.error("[Anu] analytics error: " + (e && e.message ? e.message : e));
+  }
+}
+
+// ═══════════════ MESSAGE HELPERS ═══════════════
+function extractText(msg) {
+  if (!msg) return "";
+  if (typeof msg.text === "string" && msg.text) return msg.text;
+  if (typeof msg.caption === "string" && msg.caption) return msg.caption;
+  return "";
+}
+
+// ═══════════════ CUSTOMER FLOW ═══════════════
+async function handleCustomer(msg, bizConnId) {
+  const chatId = msg && msg.chat && msg.chat.id;
+  if (!chatId) return;
+  if (msg.from && msg.from.is_bot) return;
+  const messageId = msg.message_id;
+  const firstName = (msg.from && msg.from.first_name) || "there";
+  const userText = extractText(msg);
+  const photo = msg.photo;
+
+  try {
+    // 1. Pause check
+    const settings = await fsGet("bot_settings", "global").catch(() => null);
+    if (settings && settings.paused === true) {
+      console.log("[Anu] paused, skipping chat " + chatId);
+      return;
     }
 
-    /* ─── 2️⃣ ADMIN REPLY TO NOTIFICATION ─── */
-    if (dm.reply_to_message && txt) {
-      const repliedText = dm.reply_to_message.text || dm.reply_to_message.caption || '';
-      const ref = repliedText.match(/REF:([0-9-]+):([a-zA-Z0-9_-]+)/);
-      if (ref) {
-        const payload = { chat_id: ref[1], text: txt };
-        if (ref[2] !== 'direct') payload.business_connection_id = ref[2];
-        const sr = await tg('sendMessage', payload);
-        await tg('sendMessage', {
-          chat_id: chatId,
-          text: sr && sr.ok ? '✅ Sent' : '❌ Failed',
-          reply_to_message_id: dm.message_id
-        });
-        return res.status(200).json({ ok: true });
+    // 2. Rate limit: max 15 msgs / 60s
+    const now = Date.now();
+    let rl = null;
+    try { rl = await fsGet("bot_ratelimits", String(chatId)); } catch (e) { console.error("[Anu] ratelimit read error", e && e.message); }
+    let stamps = rl && Array.isArray(rl.timestamps)
+      ? rl.timestamps.filter((t) => typeof t === "number" && now - t < 60000)
+      : [];
+    if (stamps.length >= 15) {
+      await sendCustomerMessage(chatId, "anu bot: " + rateLimitMsg(detectLanguage(userText)), {
+        bizConnId,
+        replyTo: messageId,
+      });
+      return;
+    }
+    stamps.push(now);
+    try { await fsSet("bot_ratelimits", String(chatId), { timestamps: stamps.slice(-25) }); }
+    catch (e) { console.error("[Anu] ratelimit write error", e && e.message); }
+
+    // 3. Load memory
+    let memDoc = null;
+    try { memDoc = await fsGet("bot_memory", String(chatId)); } catch (e) { console.error("[Anu] memory read error", e && e.message); }
+    const history = memDoc && Array.isArray(memDoc.messages) ? memDoc.messages.slice(-20) : [];
+    const isNew = !memDoc;
+
+    // 4. Photo → base64
+    let imageB64 = null;
+    if (photo && photo.length) {
+      const largest = photo[photo.length - 1] || {};
+      const tooBig = largest.file_size && largest.file_size > PHOTO_MAX_BYTES;
+      if (!tooBig && largest.file_id) {
+        try {
+          const fi = await tg("getFile", { file_id: largest.file_id });
+          const fp = fi && fi.result && fi.result.file_path;
+          if (fp) imageB64 = await downloadAsBase64("https://api.telegram.org/file/bot" + TOKEN + "/" + fp, PHOTO_MAX_BYTES);
+        } catch (e) { console.error("[Anu] photo handling failed: " + (e && e.message ? e.message : e)); }
+      } else if (tooBig) {
+        console.error("[Anu] photo file_size exceeds 4MB, skipping vision");
       }
     }
 
-    /* ─── 3️⃣ /start ─── */
-    if (txt === '/start') {
-      const client = await getClient(chatId);
-      const intake = await getIntake(chatId);
+    const textForAI = userText || (imageB64 ? "Please describe this photo." : "");
+    if (!textForAI && !imageB64) return;
 
-      if (!client) {
-        // Not registered
-        const welcomeText = intake && intake.status === 'pending'
-          ? `⏳ <b>Registration Pending</b>\n\nHi ${esc(firstName)}! Your registration is being reviewed.\n\nYou'll be notified once approved. Thank you for your patience! 🙏`
-          : intake && intake.status === 'rejected'
-            ? `❌ <b>Registration Rejected</b>\n\nSorry, your application was not approved.\n\nFor questions, contact support.`
-            : `👋 <b>Welcome to Anu AI!</b>\n\nI'm <b>Anu</b> — a personal AI assistant for your business.\n\n📌 <b>What I do:</b>\n• Answer questions in Amharic + English\n• Help with your business tasks\n• Available 24/7\n\n🎁 <b>14-day free trial</b>\n\n<b>To get started, register below:</b>`;
-
-        await tg('sendMessage', {
-          chat_id: chatId,
-          text: welcomeText,
-          parse_mode: 'HTML',
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: '🚀 Register Now', web_app: { url: `${APP_URL}/webapp` } }],
-              [{ text: 'ℹ️ Learn More', callback_data: 'learn_more' }]
-            ]
-          }
-        });
-        return res.status(200).json({ ok: true });
-      }
-
-      // Registered
-      const status = await checkClientStatus(client);
-      const statusMsg = status === 'trial'
-        ? `🎁 <b>Trial Active</b> — ${daysBetween(Date.now(), client.trialEnd)} days left`
-        : status === 'active'
-          ? `✅ <b>Active</b> — ${daysBetween(Date.now(), client.paidUntil)} days left`
-          : status === 'paused'
-            ? `⏸️ <b>Paused</b> — Contact support`
-            : status === 'expired'
-              ? `❌ <b>Expired</b> — Please renew`
-              : `⚠️ ${status}`;
-
-      await tg('sendMessage', {
-        chat_id: chatId,
-        text:
-          `👋 <b>Welcome back, ${esc(client.name)}!</b>\n\n` +
-          `🏢 ${esc(client.businessName || '-')}\n` +
-          `📊 Plan: <b>${PLANS[client.plan]?.name || 'Free'}</b>\n` +
-          `💬 Usage: <b>${client.messagesUsed || 0} / ${client.messagesLimit || 500}</b>\n\n` +
-          statusMsg + '\n\n' +
-          `Just send me a message to start! 😊`,
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '👤 My Account', web_app: { url: `${APP_URL}/webapp` } }]
-          ]
-        }
-      });
-      return res.status(200).json({ ok: true });
+    // 5. Classify
+    const complex = isComplex(textForAI);
+    const lang = detectLanguage(textForAI);
+    const gender = detectGender(textForAI);
+    let statusText = null;
+    try { const st = await getDailyStatus(); if (st) statusText = st.text; } catch (e) { /* no status */ }
+    let system = buildSystemPrompt({ statusText, lang, gender });
+    if (repeatCount(history, textForAI) >= 2) {
+      system += "\n\nNote: the user has repeated the same message multiple times. Acknowledge briefly and ask how you can help. Do not repeat yourself.";
     }
+    const historyMsgs = history.map((m) => ({
+      role: m.role === "assistant" ? "assistant" : "user",
+      content: String(m.content || "").slice(0, 2000),
+    }));
 
-    /* ─── 4️⃣ REGULAR MESSAGE ─── */
-    const client = await getClient(chatId);
-    if (!client) {
-      await tg('sendMessage', {
-        chat_id: chatId,
-        text: `👋 Please register first to use Anu AI.\n\nUse /start to get started.`,
-        reply_markup: {
-          inline_keyboard: [[{ text: '🚀 Register', web_app: { url: `${APP_URL}/webapp` } }]]
-        }
-      });
-      return res.status(200).json({ ok: true });
-    }
-
-    // Check status
-    const status = await checkClientStatus(client);
-    if (status === 'paused') {
-      await tg('sendMessage', { chat_id: chatId, text: '⏸️ Your account is paused. Contact support.' });
-      return res.status(200).json({ ok: true });
-    }
-    if (status === 'expired') {
-      await tg('sendMessage', {
-        chat_id: chatId,
-        text: `❌ Your trial has expired.\n\nTo continue, please renew your subscription.`,
-        reply_markup: {
-          inline_keyboard: [[{ text: '💳 Renew', web_app: { url: `${APP_URL}/webapp` } }]]
-        }
-      });
-      return res.status(200).json({ ok: true });
-    }
-    if (status === 'limit_reached') {
-      await tg('sendMessage', {
-        chat_id: chatId,
-        text: `⚠️ You've reached your message limit (${client.messagesLimit}).\n\nUpgrade to continue.`,
-        reply_markup: {
-          inline_keyboard: [[{ text: '⬆️ Upgrade', web_app: { url: `${APP_URL}/webapp` } }]]
-        }
-      });
-      return res.status(200).json({ ok: true });
-    }
-
-    // Check per-client paused
-    if (await getPaused(chatId)) return res.status(200).json({ ok: true });
-
-    // Fetch photo
-    let photoBase64 = null;
-    if (dm.photo && dm.photo.length > 0) {
-      const largest = dm.photo[dm.photo.length - 1];
-      photoBase64 = await fetchPhotoBase64(BOT_TOKEN, largest.file_id);
-    }
-
-    if (!txt && !photoBase64) return res.status(200).json({ ok: true });
-
-    // Generate reply
-    let reply = '';
+    // 6. Generate AI reply
+    let reply = null;
     try {
-      reply = await generateClientReply(client, chatId, firstName, txt, photoBase64);
+      if (imageB64) {
+        try { reply = await geminiVisionReply(system, historyMsgs, textForAI, imageB64); }
+        catch (e) { console.error("[Anu] vision failed, trying Groq text fallback"); }
+        if (!reply) reply = await groqChat(system, historyMsgs, textForAI).catch(() => null);
+      } else if (complex) {
+        reply = await aiComplex(system, historyMsgs, textForAI);
+      } else {
+        reply = await geminiChat(system, historyMsgs, textForAI).catch(() => null);
+        if (!reply) reply = await groqChat(system, historyMsgs, textForAI).catch(() => null);
+      }
     } catch (e) {
-      console.error('[AI Error]', e.message);
-      reply = /[\u1200-\u137F]/.test(txt) ? 'ሰላም! እንዴት ነህ? 😊' : 'Hey! How are you? 😊';
+      console.error("[Anu] AI generation error: " + (e && e.message ? e.message : e));
     }
 
-    // Send with typing
-    await sendWithTyping(tg, {
-      chat_id: chatId,
-      text: `anu bot: ${reply}`,
-      reply_to_message_id: dm.message_id
-    }, reply, null);
+    // Anti-echo
+    if (reply) {
+      const rTrim = reply.trim();
+      if (rTrim.length < 10 || rTrim === textForAI.trim() || isJustGreeting(rTrim)) {
+        const strict =
+          system + "\n\nPREVIOUS REPLY WAS TOO WEAK. Generate a REAL response now. Minimum 10 words. Do NOT repeat their words.";
+        let retry = null;
+        try {
+          retry = await geminiChat(strict, historyMsgs, textForAI).catch(() => null);
+          if (!retry) retry = await groqChat(strict, historyMsgs, textForAI).catch(() => null);
+        } catch (e) { console.error("[Anu] retry error: " + (e && e.message ? e.message : e)); }
+        if (retry && retry.trim().length >= 10 && retry.trim() !== textForAI.trim()) reply = retry;
+        else reply = null;
+      }
+    }
+    if (!reply) reply = fallbackFor(lang);
+    reply = sanitizeReply(reply);
+    if (!reply) reply = fallbackFor(lang);
 
-    // Increment usage
-    await incrementUsage(chatId);
+    // 7-8. Typing delay, then send with prefix
+    await sendCustomerMessage(chatId, "anu bot: " + reply, { bizConnId, replyTo: messageId });
 
-    // Notify admin if user wants owner
-    const wantsOwner = /(ananya|anani|አናንያ|አናኒ|owner|boss|admin|support|help me|እርዳ)/i.test(txt);
-    if (wantsOwner) {
-      await tg('sendMessage', {
-        chat_id: OWNER_CHAT_ID,
-        text:
-          `📩 <b>Support Request</b>\n\n` +
-          `👤 ${esc(client.name)}\n` +
-          `🆔 <code>${chatId}</code>\n` +
-          `🏢 ${esc(client.businessName || '-')}\n\n` +
-          `💬 <i>"${esc(txt)}"</i>\n\n` +
-          `━━━━━━━━━━━━━━━━━━\n` +
-          `↩️ Reply to this message\n\n` +
-          `<code>REF:${chatId}:direct</code>`,
-        parse_mode: 'HTML'
+    // 9. Save memory + analytics
+    const ts = Date.now();
+    const newMessages = history
+      .concat([
+        { role: "user", content: textForAI.slice(0, 2000), ts },
+        { role: "assistant", content: reply.slice(0, 2000), ts },
+      ])
+      .slice(-20);
+    try { await fsSet("bot_memory", String(chatId), { messages: newMessages, updatedAt: ts }); }
+    catch (e) { console.error("[Anu] memory write error: " + (e && e.message ? e.message : e)); }
+    try {
+      await fsSet("bot_introduced", String(chatId), {
+        introduced: true,
+        senderName: String(firstName).slice(0, 100),
+        introducedAt: ts,
       });
+    } catch (e) { /* non-critical */ }
+    await bumpAnalytics({ messages: 1, conversations: isNew ? 1 : 0, photos: imageB64 ? 1 : 0 });
+
+    // 10. Escalation → notify owner
+    if (shouldEscalate(textForAI)) {
+      try {
+        await notifyOwner({ firstName, chatId, text: textForAI, reply, bizConnId });
+        await bumpAnalytics({ escalations: 1 });
+      } catch (e) {
+        console.error("[Anu] escalation error: " + (e && e.message ? e.message : e));
+      }
+    }
+  } catch (e) {
+    console.error("[Anu] customer flow fatal: " + (e && e.stack ? e.stack : e));
+    try {
+      await sendCustomerMessage(chatId, "anu bot: " + fallbackFor(detectLanguage(userText)), {
+        bizConnId,
+        replyTo: messageId,
+      });
+    } catch (_) { /* last resort failed, already logged */ }
+  }
+}
+
+// ═══════════════ ADMIN FLOW ═══════════════
+async function handleManualReply(msg, m, raw) {
+  const chatId = m[1];
+  const biz = m[2];
+  if (!raw) {
+    await sendAdmin("⚠️ Empty message — nothing sent.");
+    return;
+  }
+  const params = { chat_id: chatId, text: esc("anu bot: " + raw), parse_mode: "HTML" };
+  if (biz && biz !== "direct") params.business_connection_id = biz;
+  let sent = null;
+  try {
+    sent = await tg("sendMessage", params);
+  } catch (e) {
+    console.error("[Anu] manual reply send error: " + (e && e.message ? e.message : e));
+  }
+  if (!sent || sent.ok !== true) {
+    await sendAdmin("❌ Send failed. Check logs.");
+    return;
+  }
+  await bumpAnalytics({ manual_replies: 1 });
+  try {
+    const ts = Date.now();
+    const memDoc = await fsGet("bot_memory", chatId).catch(() => null);
+    const hist = memDoc && Array.isArray(memDoc.messages) ? memDoc.messages : [];
+    await fsSet("bot_memory", chatId, {
+      messages: hist.concat([{ role: "assistant", content: raw.slice(0, 2000), ts }]).slice(-20),
+      updatedAt: ts,
+    });
+  } catch (e) {
+    console.error("[Anu] manual memory save error: " + (e && e.message ? e.message : e));
+  }
+  await sendAdmin("✅ Sent");
+}
+
+async function cmdStats() {
+  const today = todayStr();
+  const a = await fsGet("bot_analytics", today).catch(() => null);
+  const settings = await fsGet("bot_settings", "global").catch(() => null);
+  const st = await getDailyStatus().catch(() => null);
+  const n = (v) => (typeof v === "number" && isFinite(v) ? v : 0);
+  const lines = [
+    "📊 <b>Anu Bot — Admin Dashboard</b>",
+    "🎨 Created by Anany's",
+    "",
+    "━━━ STATUS ━━━",
+    "🟢 Bot: Online",
+    "⏸️ Paused: " + (settings && settings.paused ? "Yes" : "No"),
+    "📢 Daily Status: " + (st ? "Set ✅" : "None"),
+    "",
+    "━━━ PROVIDERS ━━━",
+    (GEMINI_API_KEY ? "✅" : "❌") + " Gemini API",
+    (GROQ_API_KEY ? "✅" : "❌") + " Groq API",
+    "",
+    "━━━ MODELS ━━━",
+    "🌟 Gemini: " + esc(GEMINI_MODEL),
+    "🧠 Groq Master: " + esc(GROQ_MODEL),
+    "👁️ Vision: " + esc(GEMINI_MODEL),
+    "",
+    "━━━ TODAY ━━━",
+    "💬 Messages: " + n(a && a.messages),
+    "👥 Conversations: " + n(a && a.conversations),
+    "📸 Photos: " + n(a && a.photos),
+    "🔔 Escalations: " + n(a && a.escalations),
+    "✍️ Manual replies: " + n(a && a.manual_replies),
+    "",
+    "━━━ SYSTEM ━━━",
+    "💾 Memory: Firebase (20/chat)",
+    "⏱️ Typing delay: 5-9s",
+    "🔗 Chain: Gemini + Groq → Verify",
+  ];
+  await sendAdmin(lines.join("\n"));
+}
+
+async function cmdMemory(arg) {
+  if (!arg) {
+    await sendAdmin("Usage: <code>/memory &lt;chatId&gt;</code>");
+    return;
+  }
+  const doc = await fsGet("bot_memory", arg).catch(() => null);
+  if (!doc || !Array.isArray(doc.messages) || !doc.messages.length) {
+    await sendAdmin("🗂️ No memory for <code>" + esc(arg) + "</code>.");
+    return;
+  }
+  const lines = doc.messages.slice(-10).map((m) => {
+    const who = m.role === "assistant" ? "🤖" : "👤";
+    return who + " " + esc(String(m.content || "").slice(0, 300));
+  });
+  let out = "🗂️ <b>Memory</b> <code>" + esc(arg) + "</code> (last " + lines.length + ")\n\n" + lines.join("\n");
+  if (out.length > 4000) out = out.slice(0, 4000) + "…";
+  await sendAdmin(out);
+}
+
+async function cmdExport(arg) {
+  if (!arg) {
+    await sendAdmin("Usage: <code>/export &lt;chatId&gt;</code>");
+    return;
+  }
+  const doc = await fsGet("bot_memory", arg).catch(() => null);
+  if (!doc) {
+    await sendAdmin("🗂️ No memory for <code>" + esc(arg) + "</code>.");
+    return;
+  }
+  const json = JSON.stringify(doc, null, 1).slice(0, 3500);
+  await sendAdmin("<b>📦 Memory export</b> <code>" + esc(arg) + "</code>\n<pre>" + esc(json) + "</pre>");
+}
+
+async function cmdHealth() {
+  const checks = [];
+  checks.push((GEMINI_API_KEY ? "✅" : "❌") + " Gemini API key");
+  checks.push((GROQ_API_KEY ? "✅" : "❌") + " Groq API key");
+  try {
+    await fsGet("bot_settings", "global");
+    checks.push("✅ Firestore reachable");
+  } catch (e) {
+    checks.push("❌ Firestore: " + esc(e && e.message ? e.message : "error"));
+  }
+  checks.push(TOKEN ? "✅ Telegram token set" : "❌ Telegram token missing");
+  checks.push(OWNER_CHAT_ID ? "✅ Owner chat configured" : "❌ Owner chat missing");
+  await sendAdmin("<b>🏥 Health</b>\n" + checks.join("\n"));
+}
+
+function adminHelp() {
+  return (
+    "<b>🤖 Anu Bot — Commands</b>\n" +
+    "🎨 Created by Anany's\n\n" +
+    "<code>/status</code> — show today's status\n" +
+    "<code>/status &lt;text&gt;</code> — set status\n" +
+    "<code>/status clear</code> — clear status\n" +
+    "<code>/stats</code> — analytics dashboard\n" +
+    "<code>/memory &lt;chatId&gt;</code> — last 10 messages\n" +
+    "<code>/export &lt;chatId&gt;</code> — memory as JSON\n" +
+    "<code>/forget &lt;chatId&gt;</code> — delete memory\n" +
+    "<code>/pause</code> — pause bot globally\n" +
+    "<code>/resume</code> — resume bot\n" +
+    "<code>/send &lt;chatId&gt; &lt;text&gt;</code> — send as bot\n" +
+    "<code>/health</code> — check services\n" +
+    "<code>/help</code> — this list\n\n" +
+    "💡 Reply to an escalation notification to answer that customer directly."
+  );
+}
+
+async function handleAdmin(msg) {
+  const raw = extractText(msg).trim();
+  try {
+    // Manual reply flow: owner replies to an escalation notification carrying a REF marker
+    const quoted =
+      (msg.reply_to_message && (msg.reply_to_message.text || msg.reply_to_message.caption)) || "";
+    const refM = quoted.match(/REF:([0-9-]+):([a-zA-Z0-9_-]+)/);
+    if (msg.reply_to_message && refM) {
+      await handleManualReply(msg, refM, raw);
+      return;
     }
 
-    return res.status(200).json({ ok: true });
-  }
+    if (!raw.startsWith("/")) {
+      await sendAdmin("💡 Send <code>/help</code> for commands.");
+      return;
+    }
+    const spaceIdx = raw.indexOf(" ");
+    const cmdToken = (spaceIdx === -1 ? raw : raw.slice(0, spaceIdx)).split("@")[0].toLowerCase();
+    const rest = spaceIdx === -1 ? "" : raw.slice(spaceIdx + 1).trim();
+    const args = rest ? rest.split(/\s+/) : [];
 
-  /* ══════════════ CALLBACK QUERIES ══════════════ */
-  if (update.callback_query) {
-    const cb = update.callback_query;
-    await tg('answerCallbackQuery', { callback_query_id: cb.id }).catch(() => {});
-
-    if (cb.data === 'learn_more') {
-      await tg('sendMessage', {
-        chat_id: cb.message.chat.id,
-        text:
-          `🤖 <b>About Anu AI</b>\n\n` +
-          `<b>What I do:</b>\n` +
-          `• 24/7 AI assistant\n` +
-          `• Amharic + English\n` +
-          `• Photo analysis\n` +
-          `• Business help\n\n` +
-          `<b>Pricing:</b>\n` +
-          `🆓 Free Trial — 14 days\n` +
-          `🥉 Starter — 500 ብር/ወር\n` +
-          `🥈 Pro — 1,500 ብር/ወር\n` +
-          `🥇 Business — 3,500 ብር/ወር\n\n` +
-          `Created by <b>Anany's</b>`,
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [[{ text: '🚀 Register', web_app: { url: `${APP_URL}/webapp` } }]]
+    if (cmdToken === "/start" || cmdToken === "/admin") {
+      await sendAdmin(
+        "<b>🤖 Anu Bot — Admin Dashboard</b>\n" +
+          "🎨 Created by Anany's\n\n" +
+          "👤 Owner: " + esc(OWNER_NAME) + "\n" +
+          "🟢 Status: Online\n\n" +
+          adminHelp()
+      );
+    } else if (cmdToken === "/help") {
+      await sendAdmin(adminHelp());
+    } else if (cmdToken === "/status") {
+      if (!args.length) {
+        const st = await getDailyStatus().catch(() => null);
+        await sendAdmin(st ? "📢 <b>Today's status:</b>\n<i>" + esc(st.text) + "</i>" : "📢 No status set for today.");
+      } else if (args[0].toLowerCase() === "clear") {
+        await fsDelete("bot_status", "daily").catch(() => {});
+        await sendAdmin("🗑️ Status cleared.");
+      } else {
+        const text = rest.slice(0, 500);
+        await fsSet("bot_status", "daily", { text, date: todayStr(), setAt: Date.now(), setBy: "owner" });
+        await sendAdmin("✅ Status set:\n<i>" + esc(text) + "</i>");
+      }
+    } else if (cmdToken === "/stats") {
+      await cmdStats();
+    } else if (cmdToken === "/memory") {
+      await cmdMemory(args[0]);
+    } else if (cmdToken === "/export") {
+      await cmdExport(args[0]);
+    } else if (cmdToken === "/forget") {
+      if (!args[0]) {
+        await sendAdmin("Usage: <code>/forget &lt;chatId&gt;</code>");
+      } else {
+        await fsDelete("bot_memory", args[0]);
+        await sendAdmin("🗑️ Memory deleted for <code>" + esc(args[0]) + "</code>.");
+      }
+    } else if (cmdToken === "/pause") {
+      await fsSet("bot_settings", "global", { paused: true, changedAt: Date.now() });
+      await sendAdmin("⏸️ Bot paused globally.");
+    } else if (cmdToken === "/resume") {
+      await fsSet("bot_settings", "global", { paused: false, changedAt: Date.now() });
+      await sendAdmin("▶️ Bot resumed.");
+    } else if (cmdToken === "/send") {
+      if (args.length < 2) {
+        await sendAdmin("Usage: <code>/send &lt;chatId&gt; &lt;text&gt;</code>");
+      } else {
+        const target = args[0];
+        const body = rest.slice(target.length).trim();
+        if (!body) {
+          await sendAdmin("⚠️ Empty message — nothing sent.");
+        } else {
+          let sent = null;
+          try {
+            sent = await tg("sendMessage", {
+              chat_id: target,
+              text: esc("anu bot: " + body),
+              parse_mode: "HTML",
+            });
+          } catch (e) {
+            console.error("[Anu] /send error: " + (e && e.message ? e.message : e));
+          }
+          await sendAdmin(sent && sent.ok ? "✅ Sent to <code>" + esc(target) + "</code>." : "❌ Send failed. Check logs.");
         }
-      });
+      }
+    } else if (cmdToken === "/health") {
+      await cmdHealth();
+    } else {
+      await sendAdmin("❓ Unknown command. Send <code>/help</code>.");
     }
-    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error("[Anu] admin error: " + (e && e.stack ? e.stack : e));
+    try {
+      await sendAdmin("⚠️ Admin action failed. Check logs.");
+    } catch (_) { /* ignore */ }
+  }
+}
+
+// ═══════════════ ROUTER ═══════════════
+async function routeUpdate(update) {
+  if (!update || typeof update !== "object") return;
+
+  if (update.callback_query) {
+    const q = update.callback_query;
+    try {
+      if (q && q.id) await tg("answerCallbackQuery", { callback_query_id: q.id });
+    } catch (e) {
+      console.error("[Anu] answerCallbackQuery error: " + (e && e.message ? e.message : e));
+    }
+    return;
   }
 
-  return res.status(200).json({ ok: true });
+  const bizMsg = update.business_message || update.edited_business_message;
+  if (bizMsg) {
+    if (bizMsg.from && String(bizMsg.from.id) === OWNER_CHAT_ID) return; // owner's own business message: ignore
+    await handleCustomer(bizMsg, bizMsg.business_connection_id || null);
+    return;
+  }
+
+  const msg = update.message || update.edited_message;
+  if (msg) {
+    const fromId = msg.from && msg.from.id ? String(msg.from.id) : "";
+    if (fromId && OWNER_CHAT_ID && fromId === OWNER_CHAT_ID) {
+      await handleAdmin(msg);
+      return;
+    }
+    await handleCustomer(msg, null);
+    return;
+  }
+}
+
+// ═══════════════ HANDLER ═══════════════
+export default async function handler(req, res) {
+  try {
+    if (!req || req.method !== "POST") return res.status(200).json({ ok: true });
+    let update = req.body;
+    if (typeof update === "string") {
+      try {
+        update = JSON.parse(update);
+      } catch (e) {
+        return res.status(200).json({ ok: true });
+      }
+    }
+    try {
+      await routeUpdate(update);
+    } catch (e) {
+      console.error("[Anu] routeUpdate failed: " + (e && e.stack ? e.stack : e));
+    }
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error("[Anu] handler fatal: " + (e && e.stack ? e.stack : e));
+    try {
+      return res.status(200).json({ ok: true });
+    } catch (_) {
+      return;
+    }
+  }
 }
