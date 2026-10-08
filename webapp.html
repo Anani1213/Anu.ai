@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Register — Anu AI</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:#0D0E12;color:#F3F4F6;
+  font-family:'Inter',system-ui,sans-serif;
+  padding:20px 16px;
+  min-height:100vh;
+}
+.logo{text-align:center;margin:10px 0 20px}
+.logo-orb{
+  width:64px;height:64px;border-radius:20px;
+  background:linear-gradient(135deg,#00F2FE,#00FFC6);
+  margin:0 auto 12px;
+  display:grid;place-items:center;
+  font-size:28px;font-weight:800;color:#04121A;
+  box-shadow:0 0 40px rgba(0,242,254,.5)
+}
+h1{font-size:22px;font-weight:800;margin-bottom:4px}
+.tag{font-size:12px;color:#7C8393}
+.card{
+  background:#16181E;border:1px solid #2A2D37;
+  border-radius:20px;padding:20px 18px;
+  margin-bottom:14px
+}
+label{
+  font-size:11px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:#7C8393;
+  display:block;margin-bottom:6px
+}
+input,select,textarea{
+  width:100%;padding:12px 14px;border-radius:12px;
+  background:#0F1117;border:1px solid #22252F;
+  color:#F3F4F6;font-size:14px;font-family:inherit;
+  outline:none;transition:border-color .2s;
+  margin-bottom:14px
+}
+input:focus,select:focus,textarea:focus{border-color:rgba(0,242,254,.5)}
+textarea{resize:vertical;min-height:70px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{
+  width:100%;padding:14px;border-radius:14px;
+  background:linear-gradient(135deg,#00F2FE,#00FFC6);
+  color:#04121A;font-weight:800;font-size:15px;
+  border:none;cursor:pointer;font-family:inherit;
+  transition:transform .15s;
+}
+.btn:active{transform:scale(.98)}
+.btn:disabled{opacity:.5}
+.status{
+  text-align:center;padding:30px 20px;
+  background:#16181E;border-radius:20px;
+  border:1px solid #2A2D37
+}
+.status-icon{font-size:48px;margin-bottom:12px}
+.status h2{font-size:18px;margin-bottom:8px}
+.status p{color:#9CA3AF;font-size:13px;line-height:1.6}
+.hidden{display:none}
+.toast{
+  position:fixed;bottom:20px;left:50%;
+  transform:translateX(-50%) translateY(100px);
+  background:#1C1F27;border:1px solid #2A2D37;
+  padding:12px 20px;border-radius:12px;
+  font-size:13px;transition:transform .3s;
+  z-index:999;max-width:90vw
+}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast.err{border-color:rgba(255,107,129,.5);color:#FF8296}
+</style>
+</head>
+<body>
+
+<div id="mainView">
+  <div class="logo">
+    <div class="logo-orb">A</div>
+    <h1>Anu AI</h1>
+    <p class="tag">Personal AI Assistant</p>
+  </div>
+
+  <form id="regForm">
+    <div class="card">
+      <label>Full Name *</label>
+      <input type="text" id="name" required placeholder="Your full name" />
+
+      <label>Phone Number</label>
+      <input type="tel" id="phone" placeholder="+251..." />
+
+      <label>Email</label>
+      <input type="email" id="email" placeholder="you@example.com" />
+    </div>
+
+    <div class="card">
+      <label>Business Name</label>
+      <input type="text" id="businessName" placeholder="e.g. ጤና ስቶር" />
+
+      <label>Business Type</label>
+      <select id="businessType">
+        <option value="general">General</option>
+        <option value="retail">Retail / Shop</option>
+        <option value="restaurant">Restaurant / Café</option>
+        <option value="clinic">Clinic / Health</option>
+        <option value="realestate">Real Estate</option>
+        <option value="beauty">Beauty / Salon</option>
+        <option value="education">Education / Tutoring</option>
+        <option value="freelance">Freelance</option>
+        <option value="services">Services</option>
+        <option value="other">Other</option>
+      </select>
+
+      <label>What will you use Anu for? *</label>
+      <textarea id="purpose" required placeholder="e.g. Answer customer questions, help with business tasks, translate documents..."></textarea>
+    </div>
+
+    <div class="card">
+      <label>Preferred Language</label>
+      <select id="language">
+        <option value="both">Amharic + English</option>
+        <option value="amharic">Amharic only</option>
+        <option value="english">English only</option>
+      </select>
+
+      <label>Tone of Voice</label>
+      <select id="tone">
+        <option value="friendly">Friendly</option>
+        <option value="professional">Professional</option>
+        <option value="friendly_professional">Friendly + Professional</option>
+      </select>
+    </div>
+
+    <button type="submit" class="btn" id="submitBtn">🚀 Submit Registration</button>
+  </form>
+</div>
+
+<div id="statusView" class="hidden">
+  <div class="logo">
+    <div class="logo-orb">A</div>
+  </div>
+  <div class="status" id="statusBox"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+if (tg) {
+  tg.ready();
+  tg.expand();
+  try {
+    tg.setHeaderColor('#0D0E12');
+    tg.setBackgroundColor('#0D0E12');
+  } catch(e) {}
+}
+
+const API = '/api/webapp-api';
+const $ = id => document.getElementById(id);
+
+const chatId = tg?.initDataUnsafe?.user?.id || null;
+const firstName = tg?.initDataUnsafe?.user?.first_name || '';
+
+if (firstName && $('name') && !$('name').value) {
+  $('name').value = firstName;
+}
+
+function toast(msg, isErr) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (isErr ? ' err' : '');
+  setTimeout(() => el.className = 'toast' + (isErr ? ' err' : ''), 3000);
+}
+
+function showStatus(html) {
+  $('mainView').classList.add('hidden');
+  $('statusView').classList.remove('hidden');
+  $('statusBox').innerHTML = html;
+}
+
+async function checkStatus() {
+  if (!chatId) return;
+  try {
+    const r = await fetch(`${API}?action=status&chatId=${chatId}`);
+    const data = await r.json();
+    if (data.registered) {
+      const c = data.client;
+      const badge = c.status === 'trial' ? '🎁' : c.status === 'active' ? '🟢' : c.status === 'paused' ? '⏸️' : '❌';
+      showStatus(`
+        <div class="status-icon">${badge}</div>
+        <h2>${c.name}</h2>
+        <p>${c.businessName || ''}</p>
+        <p style="margin-top:14px">Plan: <b>${c.plan}</b></p>
+        <p>Messages: <b>${c.messagesUsed} / ${c.messagesLimit}</b></p>
+        <p>Trial: <b>${c.trialDaysLeft} days left</b></p>
+      `);
+    } else if (data.pending) {
+      showStatus(`
+        <div class="status-icon">⏳</div>
+        <h2>Pending Review</h2>
+        <p>Your registration is being reviewed.<br>You'll be notified once approved.</p>
+      `);
+    } else if (data.rejected) {
+      showStatus(`
+        <div class="status-icon">❌</div>
+        <h2>Not Approved</h2>
+        <p>Your registration was not approved.<br>Contact support for questions.</p>
+      `);
+    }
+  } catch(e) {}
+}
+
+$('regForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!chatId) {
+    toast('Please open this from Telegram', true);
+    return;
+  }
+
+  const btn = $('submitBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Submitting...';
+
+  try {
+    const r = await fetch(`${API}?action=register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chatId,
+        name: $('name').value.trim(),
+        phone: $('phone').value.trim(),
+        email: $('email').value.trim(),
+        businessName: $('businessName').value.trim(),
+        businessType: $('businessType').value,
+        purpose: $('purpose').value.trim(),
+        language: $('language').value,
+        tone: $('tone').value
+      })
+    });
+
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'Failed');
+
+    showStatus(`
+      <div class="status-icon">🎉</div>
+      <h2>Registration Submitted!</h2>
+      <p>Your application has been sent for review.<br>You'll receive a Telegram message once approved.</p>
+      <p style="margin-top:14px;font-size:12px;color:#7C8393">Usually within 24 hours</p>
+    `);
+  } catch (err) {
+    toast(err.message || 'Failed to submit', true);
+    btn.disabled = false;
+    btn.textContent = '🚀 Submit Registration';
+  }
+});
+
+checkStatus();
+</script>
+</body>
+</html>
